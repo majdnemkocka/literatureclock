@@ -6,6 +6,84 @@ Alapul szolgáló upstream projekt: [`notAnElephant/literatureclock`](https://gi
 
 ---
 
+## 🚀 Gyorsindítási Útmutató (Hol kezdjem?)
+
+Ha most találkozol először a projekttel, az alábbi lépésekben tudod a legegyszerűbben elindítani a folyamatot a nyers kereséstől a kész webes felületig.
+
+---
+
+### ⚡ 1. Ajánlott gyors folyamat (Keresés ➔ Adatbázis ➔ AI Értékelés ➔ Web UI)
+
+Ez a leggyorsabb módja annak, hogy valós idézeteket szerezz és azonnal lásd a webes felületen.
+
+#### 1. lépés: Függőségek telepítése
+```bash
+pip install -r requirements.txt
+cd grading-app && npm install && cd ..
+```
+- ⏱️ **Időigény:** ~1–2 perc
+
+#### 2. lépés: Idézetek keresése a MEK teljes szöveges keresőjében
+```bash
+python scrapers/mek_search/mek_time_search.py --limit 500 --output scrapers/mek_search/mek_search_results.jsonl
+```
+- 🔍 **Mit csinál?** A `rules.json5` időpont-kifejezéseit automatikusan beküldi a MEK keresőjébe, és lementi a találati szövegrészleteket.
+- ⏱️ **Időigény:** ~5–15 perc (a beállított limit méretétől függően).
+- 📄 **Várható kimenet:** `scrapers/mek_search/mek_search_results.jsonl` (több száz/ezer nyers idézet és metaadat).
+
+#### 3. lépés: Adatbázis inicializálása és feltöltése (Seeding)
+```bash
+DATABASE_URL="postgresql://user:pass@host/db" python seed_db.py
+```
+- 🗄️ **Mit csinál?** Létrehozza az `entries` és `votes` táblákat a PostgreSQL (pl. ingyenes [Neon.tech](https://neon.tech)) adatbázisban, és betölti a kinyert snippeteket.
+- ⏱️ **Időigény:** ~10–30 másodperc.
+- 📄 **Várható kimenet:** Feltöltött adatbázis rekordok.
+
+#### 4. lépés: AI Minőségellenőrzés és Szűrés (Opcionális, de erősen ajánlott)
+```bash
+GEMINI_API_KEY="your-api-key" BUDGET_USD=2 python ai_grader.py
+```
+*(Helyi modell esetén [LM Studio]: `AI_PROVIDER=lmstudio python ai_grader.py`)*
+- 🤖 **Mit csinál?** Egy LLM ellenőrzi az idézetek irodalmi értékét, a pontosságot és kontextust, valamint kiszűri a nem-irodalmi találatokat.
+- ⏱️ **Időigény:** ~2–5 perc.
+- 📄 **Várható kimenet:** `grader.log`, valamint az adatbázisban az `is_literature` és pontszám mezők automatikus frissítése.
+
+#### 5. lépés: Webes felület indítása (Grading App)
+```bash
+cd grading-app
+DATABASE_URL="postgresql://user:pass@host/db" npm run dev
+```
+- 🌐 **Mit csinál?** Elindítja a SvelteKit webalkalmazást a `http://localhost:5173` címen.
+- ⏱️ **Időigény:** ~5 másodperc.
+- 📄 **Várható kimenet:** Böngészőben megnyitható és használható felület az idézetek böngészésére, szűrésére és manuális ellenőrzésére.
+
+---
+
+### 📚 2. Teljes könyvek letöltése és offline feldolgozása
+
+Ha teljes könyveket (több száz kötet) szeretnél offline letölteni és lokálisan elemezni:
+
+1. **Könyvek letöltése:** `python scrapers/mek_scraper.py`  
+   - ⏱️ *Időigény:* ~30–60 perc (több száz mű HTML/EPUB/TXT letöltése a `mek_downloads/` könyvtárba).
+2. **Időpontok kinyerése a könyvekből:** `python extractor.py mek_downloads/ > hits.jsonl`  
+   - ⏱️ *Időigény:* ~1–3 perc.  
+   - 📄 *Kimenet:* `hits.jsonl` fájl az összes talált időponttal és szövegkörnyezettel.
+3. **Statisztikák és lefedettség megtekintése:** `python stats.py` vagy `python db_stats_viz.py`  
+   - ⏱️ *Időigény:* ~5 másodperc.  
+   - 📊 *Kimenet:* Percalapú lefedettségi összesítő és interaktív diagram (`db_stats_chart.html`).
+
+---
+
+### 📅 3. Naptár mód (Literature Calendar)
+
+Ha a nap percei helyett az év naptári napjaihoz (hónap + nap) szeretnél idézeteket gyűjteni:
+1. **Keresés:** `python scrapers/mek_search/mek_calendar_search.py --limit 500 --output scrapers/mek_search/mek_calendar_search_results.jsonl` (~5–15 perc)
+2. **Migráció & Seed:** `npm --prefix grading-app run migrate:calendar` majd `DATABASE_URL=... python seed_calendar_db.py` (~30 mp)
+3. **AI Értékelés:** `GEMINI_API_KEY=... python calendar_ai_grader.py` (~2–5 perc)
+4. **Megjelenítés:** A Grading App felületén a fejlécben átváltható `Date Mode`-ra.
+
+---
+
 ## 📂 Fájlstruktúra és Fájlleírások
 
 ### ⚙️ 1. Szabályok és Konfigurációk
