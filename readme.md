@@ -94,11 +94,12 @@ Ha a nap percei helyett az év naptári napjaihoz (hónap + nap) szeretnél idé
 ---
 
 ### 🕷️ 2. Scraperek és Szövegkeresők (`scrapers/`)
+- **`scrapers/mek_metadata.py`**: A MEK Linked Open Data (LOD) / `metadata.rdf` és Dublin Core metaadat-kinyerő és gyorsítótárazó modulja (URN, pontos cím, szerző, VIAF, műfaj, nyelv, ISBN és opcionális borítókép-letöltő).
+- **`scrapers/mek_search/mek_time_search.py`**: A MEK teljes szöveges keresőjét (`elfulltext`) automatizáló hibrid eszköz. A `rules.json5` alapján keres, automatikusan letölti és gyorsítótárazza a *"Találat helye"* fejezeteket, és az `extractor.py`-on keresztül teljes bekezdéseket és többes találatokat (multi-hit) nyer ki LOD metaadatokkal gazdagítva.
+- **`scrapers/mek_search/mek_calendar_search.py`**: A MEK teljes szöveges keresőjét naptári dátumkifejezésekkel pásztázó keresőmotor LOD metaadat-támogatással.
 - **`scrapers/mek_scraper.py`**: A Magyar Elektronikus Könyvtár (MEK) könyvletöltője. Előre definiált magyar szerzők műveit tölti le több formátumban (HTML, EPUB, PDF, TXT), sebességkorlátozással és udvarias lekérésekkel.
 - **`scrapers/dia_scraper.py`**: A Digitális Irodalmi Akadémia (DIA) Selenium alapú crawlerezője, amely szerzők és művek katalógusát fésüli át online olvasó linkekért.
 - **`scrapers/downloadNovelByDiaUrl.py`**: DIA webes olvasójából fejezetenként kinyeri a regények szövegét és összefűzött HTML formátumba menti.
-- **`scrapers/mek_search/mek_time_search.py`**: A MEK teljes szöveges keresőjét (`elfulltext`) automatizáló eszköz. A `rules.json5` alapján generál időpont-keresőkifejezéseket, és kimenti a releváns találati snippeteket (`hits.jsonl`).
-- **`scrapers/mek_search/mek_calendar_search.py`**: A MEK teljes szöveges keresőjét naptári dátumkifejezésekkel pásztázó keresőmotor.
 - **`deduplicate_mek.py`**: A MEK keresési és letöltési találatok közötti duplikációkat szűrő segédprogram.
 
 ---

@@ -22,16 +22,34 @@ def load_rules() -> dict:
         r["_re"] = re.compile(r["pattern"], re.IGNORECASE | re.UNICODE)
     return rules
 
-def html_to_text(path: Path) -> str:
-    raw = path.read_bytes()
-    dammit = UnicodeDammit(raw, is_html=True)
-    html = dammit.unicode_markup or raw.decode("latin-2", "ignore")
+def raw_html_to_text(raw: bytes | str) -> str:
+    if isinstance(raw, bytes):
+        dammit = UnicodeDammit(raw, is_html=True)
+        html = dammit.unicode_markup or raw.decode("latin-2", "ignore")
+    else:
+        html = raw
     soup = BeautifulSoup(html, "html.parser")
     for t in soup(["script", "style", "noscript"]):
         t.decompose()
     text = soup.get_text(separator=" ", strip=False)
-    text = re.sub(r"\s+", " ", text)
-    return text
+    return re.sub(r"\s+", " ", text)
+
+def html_to_text(path: Path) -> str:
+    return raw_html_to_text(path.read_bytes())
+
+def extract_from_html(html_content: str | bytes, rules: Optional[dict] = None) -> List[dict]:
+    """
+    Extracts time records directly from an in-memory HTML string or bytes.
+    """
+    if rules is None:
+        rules = load_rules()
+    elif not rules.get("rules", []) or "_re" not in rules["rules"][0]:
+        # Compile regexes if not already compiled
+        for r in rules.get("rules", []):
+            if "_re" not in r:
+                r["_re"] = re.compile(r["pattern"], re.IGNORECASE | re.UNICODE)
+    text = raw_html_to_text(html_content)
+    return list(extract(text, rules))
 
 def hhmm_to_minute(h: int, m: int) -> int:
     return (h % 24) * 60 + (m % 60)

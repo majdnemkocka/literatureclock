@@ -9,6 +9,10 @@
 __pycache__/
 
 scrapers/mek_search/mek_calendar_search_results.json
+/scrapers/**/cache/
+/scrapers/cache/
+/covers/
+*.jsonl
 
 # Agent-specific files
 skills-lock.json

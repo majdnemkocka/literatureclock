@@ -3,9 +3,25 @@ import json
 import logging
 import random
 import re
-from pathlib import Path
+import sys
+import time
 from collections import defaultdict
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Any
+from urllib.parse import urljoin, urlparse
+
 import json5
+import requests
+
+# Add repo root and scrapers directory to sys.path
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+if str(REPO_ROOT / 'scrapers') not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / 'scrapers'))
+
+from mek_metadata import MekMetadataFetcher
+from extractor import extract_from_html
 
 try:
     from bs4 import BeautifulSoup
@@ -89,7 +105,6 @@ class TimeTermGenerator:
 
     def generate_terms(self, h, m):
         terms = set()
-        # Removed dotted patterns as requested
         terms.add(f"{h}:{m:02}")
         terms.add(f"{h:02}:{m:02}")
         terms.add(f"{h} óra {m} perc")
@@ -102,13 +117,14 @@ class TimeTermGenerator:
         for hw in h_words:
             for mw in m_words:
                 terms.add(f"{hw} óra {mw} perc")
-            terms.add(f"{hw} óra {m} perc")
-            terms.add(f"{hw} óra {m:02} perc")
+                terms.add(f"{hw} óra {m} perc")
+                terms.add(f"{h} óra {mw} perc")
 
         if m == 0:
             terms.add(f"{h} óra")
             terms.add(f"{h:02} óra")
             terms.add(f"{h} órakor")
+            terms.add(f"{h:02} órakor")
             terms.add(f"{h}-kor")
             for hw in h_words:
                 terms.add(f"{hw} óra")
@@ -170,11 +186,69 @@ class TimeTermGenerator:
 
         return list(terms)
 
+class MekSourceFetcher:
+    """
+    Downloads and caches source document pages (HTML/TXT) using transparent relative paths.
+    """
+    def __init__(self, cache_dir: Optional[Path] = None, request_delay_sec: float = 0.5):
+        self.cache_dir = Path(cache_dir) if cache_dir else Path(__file__).resolve().parent / "cache" / "pages"
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.request_delay_sec = request_delay_sec
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": "LiteratureClockHU/1.0 (+https://github.com/notAnElephant/literatureclock) SourceFetcher"
+        })
+
+    def get_cache_path(self, source_url: str) -> Optional[Path]:
+        parsed = urlparse(source_url)
+        rel_path = parsed.path.lstrip("/")
+        if not rel_path:
+            return None
+        return self.cache_dir / rel_path
+
+    def fetch_page(self, source_url: str, force_refresh: bool = False) -> Optional[str]:
+        if not source_url:
+            return None
+        cache_path = self.get_cache_path(source_url)
+        if cache_path and not force_refresh and cache_path.exists():
+            try:
+                raw_bytes = cache_path.read_bytes()
+                from bs4.dammit import UnicodeDammit
+                dammit = UnicodeDammit(raw_bytes, is_html=True)
+                return dammit.unicode_markup or raw_bytes.decode("latin-2", "ignore")
+            except Exception as e:
+                logging.warning(f"Failed to read cached page at {cache_path}: {e}")
+
+        try:
+            time.sleep(self.request_delay_sec)
+            resp = self.session.get(source_url, timeout=(10, 60))
+            if 200 <= resp.status_code < 400 and resp.content:
+                if cache_path:
+                    cache_path.parent.mkdir(parents=True, exist_ok=True)
+                    cache_path.write_bytes(resp.content)
+                from bs4.dammit import UnicodeDammit
+                dammit = UnicodeDammit(resp.content, is_html=True)
+                return dammit.unicode_markup or resp.content.decode("latin-2", "ignore")
+        except Exception as e:
+            logging.warning(f"Failed to fetch page from {source_url}: {e}")
+
+        return None
+
 class MekSearcher:
-    def __init__(self, headless=True):
+    def __init__(self, headless: bool = True, rules: Optional[dict] = None,
+                 deep_extract: bool = True, download_covers: bool = False,
+                 cache_dir: Optional[Path] = None):
         if not webdriver:
             raise ImportError("A MekSearcher futtatásához a 'selenium' csomag szükséges (pip install selenium webdriver-manager).")
         self.headless = headless
+        self.rules = rules
+        self.deep_extract = deep_extract
+        self.download_covers = download_covers
+        
+        base_cache = Path(cache_dir) if cache_dir else Path(__file__).resolve().parent / "cache"
+        self.metadata_fetcher = MekMetadataFetcher(cache_dir=base_cache / "metadata")
+        self.source_fetcher = MekSourceFetcher(cache_dir=base_cache / "pages")
+
         self.options = webdriver.ChromeOptions()
         if headless:
             self.options.add_argument("--headless")
@@ -195,7 +269,7 @@ class MekSearcher:
             pass
         self._init_driver()
         
-    def search(self, term):
+    def search(self, term: str) -> List[Dict[str, Any]]:
         # Retry loop for driver stability
         for attempt in range(2):
             try:
@@ -212,7 +286,7 @@ class MekSearcher:
                 return []
         return []
 
-    def _search_attempt(self, term):
+    def _search_attempt(self, term: str) -> List[Dict[str, Any]]:
         raw_results = []
         logging.info(f"Navigating to {self.url}...")
         self.driver.get(self.url)
@@ -275,13 +349,20 @@ class MekSearcher:
                 snippet_elem = link_elem.find(class_='foundtext')
                 snippet = str(snippet_elem) if snippet_elem else ""
                 
+                # Extract "Találat helye" link (.mekfound)
+                found_elem = soup.find('a', class_='mekfound')
+                found_href = found_elem.get('href', '').strip() if found_elem else ''
+                source_url = urljoin('https://mek.oszk.hu', found_href) if found_href else ''
+
                 full_title = f"{author}: {title}" if author else title
 
                 if full_title:
                     raw_results.append({
                         "search_term": term,
                         "title": full_title,
+                        "author": author,
                         "link": link,
+                        "source_url": source_url,
                         "snippet": snippet
                     })
                 else:
@@ -290,20 +371,80 @@ class MekSearcher:
             except Exception as e:
                 logging.warning(f"Error parsing hit block {i}: {e}")
         
-        # Filter results based on literature category
+        # Enrich with metadata, deep extraction and literature checks
         if raw_results:
-            logging.info(f"Checking {len(raw_results)} hits for literature category...")
+            logging.info(f"Processing {len(raw_results)} hits (deep_extract={self.deep_extract})...")
             valid_results = []
             fallback_results = []
             
             for res in raw_results:
-                is_lit, topics = self.check_is_literature(res['link'])
-                res['is_literature'] = is_lit
-                res['topics'] = topics
-                if is_lit:
-                    valid_results.append(res)
-                else:
-                    fallback_results.append(res)
+                meta = self.metadata_fetcher.fetch_metadata(res['link'])
+                is_lit = meta.get("is_literature", False)
+                topics = meta.get("topics", [])
+                
+                if not is_lit and not topics:
+                    is_lit, topics = self.check_is_literature(res['link'])
+                    meta["is_literature"] = is_lit
+                    meta["topics"] = topics
+
+                # Deep extraction if source_url is present and enabled
+                deep_success = False
+                if self.deep_extract and res.get("source_url") and self.rules:
+                    html_page = self.source_fetcher.fetch_page(res["source_url"])
+                    if html_page:
+                        try:
+                            extracted_records = extract_from_html(html_page, self.rules)
+                            if extracted_records:
+                                deep_success = True
+                                for rec in extracted_records:
+                                    norm_t = rec.get("norm_time")
+                                    valid_time_list = [norm_t] if norm_t else []
+                                    deep_item = {
+                                        "search_term": term,
+                                        "title": meta.get("title") or res["title"],
+                                        "author": meta.get("author") or res["author"],
+                                        "link": res["link"],
+                                        "source_url": res["source_url"],
+                                        "source_type": "deep_extract",
+                                        "is_fallback": False,
+                                        "snippet": rec["context"],
+                                        "matched_text": rec["match"],
+                                        "norm_time": norm_t,
+                                        "minute": rec.get("minute"),
+                                        "minute_candidates": rec.get("minute_candidates"),
+                                        "rule_id": rec.get("rule_id"),
+                                        "valid_times": valid_time_list,
+                                        "is_literature": is_lit,
+                                        "topics": topics,
+                                        "urn": meta.get("urn", ""),
+                                        "genre": meta.get("genre", ""),
+                                        "cover_url": meta.get("cover_url", ""),
+                                        "raw_metadata": meta.get("raw_metadata", {}),
+                                        "fallback_snippet": res["snippet"]
+                                    }
+                                    if self.download_covers and meta.get("mek_id"):
+                                        self.metadata_fetcher.fetch_cover_image(meta["mek_id"], Path("covers"))
+                                    if is_lit:
+                                        valid_results.append(deep_item)
+                                    else:
+                                        fallback_results.append(deep_item)
+                        except Exception as e:
+                            logging.warning(f"Deep extraction failed on {res['source_url']}: {e}")
+
+                # Fallback to snippet if deep extract didn't yield records
+                if not deep_success:
+                    res["source_type"] = "snippet_fallback"
+                    res["is_fallback"] = True
+                    res["is_literature"] = is_lit
+                    res["topics"] = topics
+                    res["urn"] = meta.get("urn", "")
+                    res["genre"] = meta.get("genre", "")
+                    res["cover_url"] = meta.get("cover_url", "")
+                    res["raw_metadata"] = meta.get("raw_metadata", {})
+                    if is_lit:
+                        valid_results.append(res)
+                    else:
+                        fallback_results.append(res)
             
             if valid_results:
                 logging.info(f"  -> {len(valid_results)} literature hits kept.")
@@ -314,7 +455,7 @@ class MekSearcher:
         
         return []
 
-    def check_is_literature(self, link):
+    def check_is_literature(self, link: str) -> Tuple[bool, List[str]]:
         if not link:
             return False, []
         try:
@@ -338,11 +479,17 @@ class MekSearcher:
         self.driver.quit()
 
 def main():
-    parser = argparse.ArgumentParser(description="Search MEK for time patterns.")
+    parser = argparse.ArgumentParser(description="Search MEK for time patterns with hybrid deep extraction.")
     parser.add_argument("--limit", type=int, default=5, help="Max number of terms to search.")
     parser.add_argument("--output", default="mek_search_results.jsonl", help="Output file path.")
     parser.add_argument("--visible", action="store_true", help="Run browser in visible mode.")
     parser.add_argument("--term", help="Search for a specific term (ignores generator).")
+    parser.add_argument("--deep-extract", dest="deep_extract", action="store_true", default=True,
+                        help="Perform deep extraction on 'Találat helye' chapter sources (default: True).")
+    parser.add_argument("--no-deep-extract", dest="deep_extract", action="store_false",
+                        help="Disable deep extraction and save only search snippets.")
+    parser.add_argument("--download-covers", action="store_true", default=False,
+                        help="Download cover images when available into covers/ directory.")
     args = parser.parse_args()
 
     rules_path = Path(__file__).parent.parent.parent / 'rules.json5'
@@ -369,7 +516,12 @@ def main():
         except Exception as e:
             logging.warning(f"Error reading existing file: {e}")
 
-    searcher = MekSearcher(headless=not args.visible)
+    searcher = MekSearcher(
+        headless=not args.visible,
+        rules=rules,
+        deep_extract=args.deep_extract,
+        download_covers=args.download_covers
+    )
 
     try:
         term_to_times = defaultdict(set)
@@ -420,7 +572,8 @@ def main():
                 if results:
                     logging.info(f"  -> Found {len(results)} matches.")
                     for res in results:
-                        res["valid_times"] = valid_times
+                        if not res.get("valid_times"):
+                            res["valid_times"] = valid_times
                         f.write(json.dumps(res, ensure_ascii=False) + "\n")
                 else:
                     logging.info("  -> No matches.")

@@ -97,6 +97,57 @@ class TestRulesAndTerms(unittest.TestCase):
                         num = int(match.group(1))
                         self.assertTrue(1 <= num <= 12, f"Relative hour in '{term}' for {h:02}:{m:02} must be 1..12, got {num}")
 
+    def test_mek_metadata_id_extraction(self):
+        from mek_metadata import MekMetadataFetcher
+        self.assertEqual(MekMetadataFetcher.extract_mek_id("https://mek.oszk.hu/00700/00708/"), ("00700", "00708"))
+        self.assertEqual(MekMetadataFetcher.extract_mek_id("/16000/16078/16078.htm"), ("16000", "16078"))
+        self.assertEqual(MekMetadataFetcher.extract_mek_id("MEK-00708"), ("00700", "00708"))
+        self.assertEqual(MekMetadataFetcher.extract_mek_id("708"), ("00700", "00708"))
+        self.assertIsNone(MekMetadataFetcher.extract_mek_id("invalid-url"))
+
+    def test_mek_metadata_caching(self):
+        import tempfile
+        from mek_metadata import MekMetadataFetcher
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fetcher = MekMetadataFetcher(cache_dir=Path(tmpdir))
+            cache_file = Path(tmpdir) / "00700" / "00708" / "metadata.json"
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            dummy_data = {
+                "mek_id": "00708",
+                "prefix": "00700",
+                "title": "Teszt Könyv",
+                "author": "Teszt Szerző",
+                "urn": "urn:nbn:hu-teszt"
+            }
+            with cache_file.open("w", encoding="utf-8") as f:
+                json.dump(dummy_data, f)
+
+            result = fetcher.fetch_metadata("00708")
+            self.assertEqual(result["title"], "Teszt Könyv")
+            self.assertEqual(result["urn"], "urn:nbn:hu-teszt")
+
+    def test_mek_source_fetcher_relative_cache_path(self):
+        import tempfile
+        from mek_time_search import MekSourceFetcher
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fetcher = MekSourceFetcher(cache_dir=Path(tmpdir))
+            cache_path = fetcher.get_cache_path("https://mek.oszk.hu/05200/05291/05291.htm")
+            self.assertEqual(cache_path, Path(tmpdir) / "05200" / "05291" / "05291.htm")
+
+            # Test local cache read
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text("<html><body><p>Teszt tartalom</p></body></html>", encoding="utf-8")
+            content = fetcher.fetch_page("https://mek.oszk.hu/05200/05291/05291.htm")
+            self.assertIn("Teszt tartalom", content)
+
+    def test_extract_from_html_in_memory(self):
+        from extractor import extract_from_html
+        html = "<p>A vonat 14:35-kor indult el az allomasrol.</p>"
+        records = extract_from_html(html, self.rules)
+        self.assertTrue(len(records) > 0)
+        self.assertEqual(records[0]["norm_time"], "14:35")
+        self.assertEqual(records[0]["minute"], 875)
+
     def test_stats_guards(self):
         empty_stats = get_hits_stats(REPO_ROOT / 'non_existent_file.jsonl')
         self.assertEqual(empty_stats['total_hits'], 0)

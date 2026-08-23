@@ -3,19 +3,40 @@ import json
 import logging
 import random
 import re
+import sys
 import time
 from collections import defaultdict
 from pathlib import Path
-import json5
+from typing import Dict, List, Optional, Tuple, Any
+from urllib.parse import urljoin, urlparse
 
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.common.exceptions import TimeoutException, WebDriverException
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import Select, WebDriverWait
-from webdriver_manager.chrome import ChromeDriverManager
+import json5
+import requests
+
+# Add repo root and scrapers directory to sys.path
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+if str(REPO_ROOT / 'scrapers') not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / 'scrapers'))
+
+from mek_metadata import MekMetadataFetcher
+
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
+
+try:
+    from selenium import webdriver
+    from selenium.common.exceptions import TimeoutException, WebDriverException
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import Select, WebDriverWait
+    from webdriver_manager.chrome import ChromeDriverManager
+except ImportError:
+    webdriver = None
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -82,13 +103,18 @@ class DateTermGenerator:
 
 
 class MekSearcher:
-    def __init__(self, headless=True):
+    def __init__(self, headless: bool = True, download_covers: bool = False, cache_dir: Optional[Path] = None):
+        if not webdriver:
+            raise ImportError("A MekSearcher futtatásához a 'selenium' csomag szükséges (pip install selenium webdriver-manager).")
         self.options = webdriver.ChromeOptions()
         if headless:
             self.options.add_argument("--headless")
         self.options.add_argument("--no-sandbox")
         self.options.add_argument("--disable-dev-shm-usage")
         self.url = "https://mek.oszk.hu/hu/search/elfulltext/#sealist"
+        self.download_covers = download_covers
+        base_cache = Path(cache_dir) if cache_dir else Path(__file__).resolve().parent / "cache"
+        self.metadata_fetcher = MekMetadataFetcher(cache_dir=base_cache / "metadata")
         self._init_driver()
 
     def _init_driver(self):
@@ -103,7 +129,7 @@ class MekSearcher:
             pass
         self._init_driver()
 
-    def search(self, term):
+    def search(self, term: str) -> List[Dict[str, Any]]:
         for attempt in range(2):
             try:
                 return self._search_attempt(term)
@@ -118,7 +144,7 @@ class MekSearcher:
                 return []
         return []
 
-    def _search_attempt(self, term):
+    def _search_attempt(self, term: str) -> List[Dict[str, Any]]:
         raw_results = []
         logging.info(f"Navigating to {self.url}...")
         self.driver.get(self.url)
@@ -165,13 +191,20 @@ class MekSearcher:
                 title = title_elem.get_text(strip=True) if title_elem else ""
                 snippet_elem = link_elem.find(class_='foundtext')
                 snippet = str(snippet_elem) if snippet_elem else ""
+
+                found_elem = soup.find('a', class_='mekfound')
+                found_href = found_elem.get('href', '').strip() if found_elem else ''
+                source_url = urljoin('https://mek.oszk.hu', found_href) if found_href else ''
+
                 full_title = f"{author}: {title}" if author else title
 
                 if full_title:
                     raw_results.append({
                         "search_term": term,
                         "title": full_title,
+                        "author": author,
                         "link": link,
+                        "source_url": source_url,
                         "snippet": snippet
                     })
                 else:
@@ -185,9 +218,27 @@ class MekSearcher:
         valid_results = []
         fallback_results = []
         for res in raw_results:
-            is_lit, topics = self.check_is_literature(res['link'])
-            res['is_literature'] = is_lit
-            res['topics'] = topics
+            meta = self.metadata_fetcher.fetch_metadata(res['link'])
+            is_lit = meta.get("is_literature", False)
+            topics = meta.get("topics", [])
+            
+            if not is_lit and not topics:
+                is_lit, topics = self.check_is_literature(res['link'])
+                meta["is_literature"] = is_lit
+                meta["topics"] = topics
+
+            res["source_type"] = "snippet_fallback"
+            res["is_fallback"] = True
+            res["is_literature"] = is_lit
+            res["topics"] = topics
+            res["urn"] = meta.get("urn", "")
+            res["genre"] = meta.get("genre", "")
+            res["cover_url"] = meta.get("cover_url", "")
+            res["raw_metadata"] = meta.get("raw_metadata", {})
+
+            if self.download_covers and meta.get("mek_id"):
+                self.metadata_fetcher.fetch_cover_image(meta["mek_id"], Path("covers"))
+
             if is_lit:
                 valid_results.append(res)
             else:
@@ -201,7 +252,7 @@ class MekSearcher:
             return fallback_results
         return []
 
-    def check_is_literature(self, link):
+    def check_is_literature(self, link: str) -> Tuple[bool, List[str]]:
         if not link:
             return False, []
         try:
@@ -225,11 +276,13 @@ class MekSearcher:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Search MEK for calendar/date patterns.")
+    parser = argparse.ArgumentParser(description="Search MEK for calendar/date patterns with LOD metadata.")
     parser.add_argument("--limit", type=int, default=200, help="Max number of terms to search. Use <=0 for all.")
     parser.add_argument("--output", default="mek_calendar_search_results.jsonl", help="Output file path.")
     parser.add_argument("--visible", action="store_true", help="Run browser in visible mode.")
     parser.add_argument("--term", help="Search for a specific term (ignores generator).")
+    parser.add_argument("--download-covers", action="store_true", default=False,
+                        help="Download cover images when available into covers/ directory.")
     args = parser.parse_args()
 
     rules_path = Path(__file__).parent.parent.parent / 'rules_calendar.json5'
@@ -251,7 +304,10 @@ def main():
                     pass
         logging.info(f"Found {len(processed_terms)} already processed terms.")
 
-    searcher = MekSearcher(headless=not args.visible)
+    searcher = MekSearcher(
+        headless=not args.visible,
+        download_covers=args.download_covers
+    )
 
     try:
         if args.term:
