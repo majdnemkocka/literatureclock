@@ -106,6 +106,20 @@ class TestRulesAndTerms(unittest.TestCase):
         empty_summary = load_stats(REPO_ROOT / 'non_existent_summary.json')
         self.assertEqual(empty_summary, {})
 
+    def test_load_rules_fallback(self):
+        result = load_rules(REPO_ROOT / 'non_existent_rules.json5')
+        self.assertIsNone(result)
+
+    def test_mek_searcher_webdriver_guard(self):
+        import mek_time_search
+        original_webdriver = mek_time_search.webdriver
+        try:
+            mek_time_search.webdriver = None
+            with self.assertRaises(ImportError):
+                mek_time_search.MekSearcher()
+        finally:
+            mek_time_search.webdriver = original_webdriver
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -5,6 +5,7 @@ import random
 import re
 from pathlib import Path
 from collections import defaultdict
+import json5
 
 try:
     from bs4 import BeautifulSoup
@@ -26,12 +27,10 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def load_rules(path):
-    """Loads rules.json5, stripping comments."""
+    """Loads rules.json5 using json5 parser."""
     try:
         with open(path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        content = re.sub(r'//.*', '', content)
-        return json.loads(content)
+            return json5.load(f)
     except Exception as e:
         logging.error(f"Failed to load rules from {path}: {e}")
         return None
@@ -173,6 +172,8 @@ class TimeTermGenerator:
 
 class MekSearcher:
     def __init__(self, headless=True):
+        if not webdriver:
+            raise ImportError("A MekSearcher futtatásához a 'selenium' csomag szükséges (pip install selenium webdriver-manager).")
         self.headless = headless
         self.options = webdriver.ChromeOptions()
         if headless:

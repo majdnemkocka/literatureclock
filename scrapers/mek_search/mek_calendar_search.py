@@ -6,6 +6,7 @@ import re
 import time
 from collections import defaultdict
 from pathlib import Path
+import json5
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
@@ -22,9 +23,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 def load_rules(path):
     try:
         with open(path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        content = re.sub(r'//.*', '', content)
-        return json.loads(content)
+            return json5.load(f)
     except Exception as e:
         logging.error(f"Failed to load rules from {path}: {e}")
         return None
