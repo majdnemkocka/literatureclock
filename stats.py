@@ -7,11 +7,19 @@ def get_hits_stats(jsonl_path='hits.jsonl'):
     Reads hits.jsonl, collects stats including the ordered set of norm times and rule_id distribution.
     Returns a dict with total hits, ordered norm times, and rule_id distribution.
     """
+    path = Path(jsonl_path)
+    if not path.exists():
+        return {
+            'total_hits': 0,
+            'ordered_norm_times': [],
+            'rule_id_distribution': {}
+        }
+
     norm_times = set()
     total_hits = 0
     rule_id_counts = {}
 
-    with open(jsonl_path, 'r', encoding='utf-8') as f:
+    with path.open('r', encoding='utf-8') as f:
         for line in f:
             if not line.strip():
                 continue
@@ -32,11 +40,11 @@ def get_hits_stats(jsonl_path='hits.jsonl'):
     }
 
 
-def load_stats(summary_path: str = "mek_downloads/_summary.json") -> list:
+def load_stats(summary_path: str = "mek_downloads/_summary.json") -> dict:
     """Load and return the stats from _summary.json."""
     path = Path(summary_path)
     if not path.exists():
-        raise FileNotFoundError(f"Summary file not found: {summary_path}")
+        return {}
     with path.open(encoding="utf-8") as f:
         return json.load(f)
 

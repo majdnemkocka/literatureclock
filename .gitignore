@@ -15,6 +15,7 @@ skills-lock.json
 .claude/
 .agents/
 AGENTS.md
+GEMINI.md
 
 # Sensitive or high-churn files
 .idea/**/dataSources/

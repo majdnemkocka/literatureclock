@@ -18,7 +18,7 @@ SLOW_MS = int(os.getenv("MEK_SLOW_MS", "800"))  # log ops slower than this
 
 # ---------------- Config ----------------
 
-OUT_DIR = Path('../mek_downloads')
+OUT_DIR = Path(__file__).resolve().parent.parent / 'mek_downloads'
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Keep this modest; can raise to 6–8 if needed
@@ -54,9 +54,8 @@ AUTHORS = [
     "Závada Pál",
     "Dragomán György",
 
-    "Kafka Margit",
-    "Mándy Iván",
-    "Nemes-Nagy Ágnes",
+    "Kaffka Margit",
+    "Nemes Nagy Ágnes",
     "Weöres Sándor",
     "Örkény István",
     "Lázár Ervin",

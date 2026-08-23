@@ -6,14 +6,21 @@ import re
 from pathlib import Path
 from collections import defaultdict
 
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.common.exceptions import TimeoutException, WebDriverException
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait, Select
-from webdriver_manager.chrome import ChromeDriverManager
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
+
+try:
+    from selenium import webdriver
+    from selenium.common.exceptions import TimeoutException, WebDriverException
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import WebDriverWait, Select
+    from webdriver_manager.chrome import ChromeDriverManager
+except ImportError:
+    webdriver = None
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -109,41 +116,58 @@ class TimeTermGenerator:
                 terms.add(f"{hw} órakor")
                 terms.add(f"{hw}-kor") 
 
-        next_h = (h + 1) % 24
-        next_h_words = self.get_number_word(next_h)
+        # Hungarian relative quarter/half terms are strictly 1-12 based
+        h_12 = 12 if h % 12 == 0 else h % 12
+        next_h_12 = 1 if h_12 == 12 else h_12 + 1
+        next_h_words = self.get_number_word(next_h_12)
         
         if m == 30:
-            terms.add(f"fél {next_h}")
+            terms.add(f"fél {next_h_12}")
             for w in next_h_words:
                 terms.add(f"fél {w}")
         
         if m == 15:
-            terms.add(f"negyed {next_h}")
+            terms.add(f"negyed {next_h_12}")
             for w in next_h_words:
                 terms.add(f"negyed {w}")
 
         if m == 45:
-            terms.add(f"háromnegyed {next_h}")
+            terms.add(f"háromnegyed {next_h_12}")
             for w in next_h_words:
                 terms.add(f"háromnegyed {w}")
 
         if m > 0:
-             terms.add(f"{m} perccel {h} óra után")
-             for mw in m_words:
-                 terms.add(f"{mw} perccel {h} óra után")
-                 for hw in h_words:
-                      terms.add(f"{mw} perccel {hw} óra után")
+            terms.add(f"{m} perccel {h} óra után")
+            if h != h_12:
+                terms.add(f"{m} perccel {h_12} óra után")
+            for mw in m_words:
+                terms.add(f"{mw} perccel {h} óra után")
+                if h != h_12:
+                    terms.add(f"{mw} perccel {h_12} óra után")
+                for hw in h_words:
+                    terms.add(f"{mw} perccel {hw} óra után")
+                if h != h_12:
+                    for hw12 in self.get_number_word(h_12):
+                        terms.add(f"{mw} perccel {hw12} óra után")
         
         y_before = 60 - m
         if 0 < y_before < 60:
-             target_next_h = (h + 1) % 24
-             terms.add(f"{y_before} perccel {target_next_h} óra előtt")
-             y_before_words = self.get_number_word(y_before)
-             target_next_h_words = self.get_number_word(target_next_h)
-             for ybw in y_before_words:
-                 terms.add(f"{ybw} perccel {target_next_h} óra előtt")
-                 for tnhw in target_next_h_words:
-                      terms.add(f"{ybw} perccel {tnhw} óra előtt")
+            target_next_h = (h + 1) % 24
+            target_next_h_12 = next_h_12
+            terms.add(f"{y_before} perccel {target_next_h} óra előtt")
+            if target_next_h != target_next_h_12:
+                terms.add(f"{y_before} perccel {target_next_h_12} óra előtt")
+            y_before_words = self.get_number_word(y_before)
+            target_next_h_words = self.get_number_word(target_next_h)
+            for ybw in y_before_words:
+                terms.add(f"{ybw} perccel {target_next_h} óra előtt")
+                if target_next_h != target_next_h_12:
+                    terms.add(f"{ybw} perccel {target_next_h_12} óra előtt")
+                for tnhw in target_next_h_words:
+                    terms.add(f"{ybw} perccel {tnhw} óra előtt")
+                if target_next_h != target_next_h_12:
+                    for tnhw12 in self.get_number_word(target_next_h_12):
+                        terms.add(f"{ybw} perccel {tnhw12} óra előtt")
 
         return list(terms)
 

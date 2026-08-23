@@ -47,21 +47,21 @@
       "id": "relative_fel",
       "description": "fél N → (N-1):30",
       "type": "regex",
-      "pattern": "\\bfél\\s*([01]?\\d|2[0-3]|tizenegy|tizenkettő|egy|kettő|két|három|négy|öt|hat|hét|nyolc|kilenc|tíz)\\b",
+      "pattern": "\\bfél\\s*(1[0-2]|0?[1-9]|tizenegy|tizenkettő|egy|kettő|két|három|négy|öt|hat|hét|nyolc|kilenc|tíz)(?:-?kor)?\\b",
       "semantics": "half_next_hour"
     },
     {
       "id": "relative_negyed",
       "description": "negyed N → (N-1):15",
       "type": "regex",
-      "pattern": "\\bnegyed\\s*([01]?\\d|2[0-3]|tizenegy|tizenkettő|egy|kettő|két|három|négy|öt|hat|hét|nyolc|kilenc|tíz)\\b",
+      "pattern": "\\bnegyed\\s*(1[0-2]|0?[1-9]|tizenegy|tizenkettő|egy|kettő|két|három|négy|öt|hat|hét|nyolc|kilenc|tíz)(?:-?kor)?\\b",
       "semantics": "quarter_next_hour"
     },
     {
       "id": "relative_haromnegyed",
       "description": "háromnegyed N → (N-1):45",
       "type": "regex",
-      "pattern": "\\bháromnegyed\\s*([01]?\\d|2[0-3]|tizenegy|tizenkettő|egy|kettő|két|három|négy|öt|hat|hét|nyolc|kilenc|tíz)\\b",
+      "pattern": "\\bháromnegyed\\s*(1[0-2]|0?[1-9]|tizenegy|tizenkettő|egy|kettő|két|három|négy|öt|hat|hét|nyolc|kilenc|tíz)(?:-?kor)?\\b",
       "semantics": "threequarter_next_hour"
     },
     {
