@@ -1,14 +1,18 @@
 import os
+import re
 from typing import List, Optional, Tuple
 import requests
 
 DEFAULT_GEMINI_MODELS: List[Tuple[str, str]] = [
-    ("gemini-2.5-flash (Gemini 2.5 Flash - Ajánlott)", "gemini-2.5-flash"),
+    ("gemini-3.7-flash (Gemini 3.7 Flash - Legújabb)", "gemini-3.7-flash"),
+    ("gemini-3.6-flash (Gemini 3.6 Flash)", "gemini-3.6-flash"),
+    ("gemini-3.5-flash (Gemini 3.5 Flash)", "gemini-3.5-flash"),
+    ("gemini-3.1-pro-preview (Gemini 3.1 Pro Preview)", "gemini-3.1-pro-preview"),
+    ("gemini-2.5-flash (Gemini 2.5 Flash - Stabil)", "gemini-2.5-flash"),
     ("gemini-2.5-pro (Gemini 2.5 Pro - Magas minőség)", "gemini-2.5-pro"),
-    ("gemini-2.5-flash-lite (Gemini 2.5 Flash-Lite - Költséghatékony)", "gemini-2.5-flash-lite"),
-    ("gemini-2.0-flash (Gemini 2.0 Flash - Stabil)", "gemini-2.0-flash"),
-    ("gemini-1.5-pro (Gemini 1.5 Pro - Mély kontextus)", "gemini-1.5-pro"),
-    ("gemini-1.5-flash (Gemini 1.5 Flash)", "gemini-1.5-flash"),
+    ("gemini-flash-latest (Gemini Flash Latest)", "gemini-flash-latest"),
+    ("gemini-pro-latest (Gemini Pro Latest)", "gemini-pro-latest"),
+    ("gemini-2.0-flash (Gemini 2.0 Flash)", "gemini-2.0-flash"),
 ]
 
 DEFAULT_OPENAI_MODELS: List[Tuple[str, str]] = [
@@ -25,7 +29,8 @@ def fetch_gemini_models(api_key: Optional[str] = None) -> List[Tuple[str, str]]:
     GET https://generativelanguage.googleapis.com/v1beta/models?key={api_key}
     
     Filters models strictly by supportedGenerationMethods containing 'generateContent',
-    and removes non-text/specialized preview models (robotics, tts, image-only).
+    and removes non-text/specialized preview models (robotics, tts, image-only, audio).
+    Sorts dynamically by version descending so the latest release is on top.
     """
     key = api_key or os.environ.get("GEMINI_API_KEY")
     if not key or not key.strip():
@@ -50,27 +55,30 @@ def fetch_gemini_models(api_key: Optional[str] = None) -> List[Tuple[str, str]]:
 
                 # Filter out specialized non-text or hardware-specific methods
                 lower_id = model_id.lower()
-                if any(x in lower_id for x in ["robotics", "computer-use", "embed", "imagen", "aqa", "tts"]):
+                if any(x in lower_id for x in ["robotics", "computer-use", "embed", "imagen", "image", "banana", "aqa", "tts", "clip", "lyria"]):
                     continue
 
                 label = f"{model_id} ({display_name})" if display_name and display_name != model_id else model_id
                 filtered.append((label, model_id))
 
             if filtered:
-                # Sort so latest 2.5/2.0 flash/pro models appear near top
-                def _sort_key(item):
+                def _version_priority(item: Tuple[str, str]) -> Tuple[int, float, str]:
                     mid = item[1]
-                    if "2.5-flash" in mid and "lite" not in mid:
-                        return (0, mid)
-                    if "2.5-pro" in mid:
-                        return (1, mid)
-                    if "2.5-flash-lite" in mid:
-                        return (2, mid)
-                    if "2.0-flash" in mid:
-                        return (3, mid)
-                    return (10, mid)
+                    # Check for explicit versions like 3.7, 3.5, 2.5, 2.0
+                    match = re.search(r"gemini-(\d+(?:\.\d+)?)", mid)
+                    if match:
+                        try:
+                            ver = float(match.group(1))
+                            return (0, -ver, mid)
+                        except ValueError:
+                            pass
+                    if "latest" in mid:
+                        return (1, 0, mid)
+                    if "gemma" in mid:
+                        return (2, 0, mid)
+                    return (3, 0, mid)
 
-                filtered.sort(key=_sort_key)
+                filtered.sort(key=_version_priority)
                 return filtered
     except Exception:
         pass
