@@ -41,11 +41,13 @@ class DateTermGenerator:
         self.rules = rules
         self.months = rules.get('months', [])
         self.day_suffixes = rules.get('day_suffixes', ['.'])
+        self.month_parts = rules.get('month_parts', [])
+        self.seasons = rules.get('seasons', [])
+        self.weekdays = rules.get('weekdays', [])
         self.special_terms = rules.get('special_terms', [])
 
     def generate_terms_for_date(self, month_num: int, day: int) -> List[str]:
         terms = set()
-        date_mmdd = f"{month_num:02}-{day:02}"
         
         # Find matching month config
         month_cfg = next((m for m in self.months if m.get("num") == month_num), None)
@@ -67,29 +69,100 @@ class DateTermGenerator:
 
         return list(terms)
 
-    def generate_terms(self):
-        term_to_dates = defaultdict(set)
+    def generate_month_part_queries(self) -> List[Tuple[str, List[str], str, Dict[str, Any]]]:
+        """
+        Generates month-part queries (e.g. "március elején", "április közepén").
+        Returns list of (query_id, terms, query_str, meta_dict).
+        """
+        results = []
+        for month_cfg in self.months:
+            m_num = month_cfg.get("num")
+            m_name = month_cfg.get("name", "")
+            max_days = month_cfg.get("max_days", 31)
+            month_forms = month_cfg.get("forms", [m_name])
 
-        for month in self.months:
-            month_num = month['num']
-            for day in range(1, 32):
-                date_mmdd = f"{month_num:02}-{day:02}"
-                terms = self.generate_terms_for_date(month_num, day)
-                for t in terms:
-                    term_to_dates[t].add(date_mmdd)
+            for part_cfg in self.month_parts:
+                part_name = part_cfg.get("part")
+                suffix_forms = part_cfg.get("suffix_forms", [])
+                off_min = part_cfg.get("offset_min", 1)
+                off_max = max_days if part_cfg.get("offset_max") == "max" else part_cfg.get("offset_max", 10)
+                off_foc = part_cfg.get("offset_focus", 5)
 
+                d_min_str = f"{m_num:02d}-{off_min:02d}"
+                d_max_str = f"{m_num:02d}-{off_max:02d}"
+                d_foc_str = f"{m_num:02d}-{off_foc:02d}"
+
+                terms = set()
+                for mf in month_forms:
+                    for sf in suffix_forms:
+                        terms.add(f"{mf} {sf}")
+
+                query_id = f"month_part_{m_num:02d}_{part_name}"
+                query_str = MekQueryBuilder.build_query(list(terms))
+                meta = {
+                    "date_min_str": d_min_str,
+                    "date_max_str": d_max_str,
+                    "date_focus_str": d_foc_str,
+                    "day_of_week": None
+                }
+                results.append((query_id, list(terms), query_str, meta))
+        return results
+
+    def generate_season_queries(self) -> List[Tuple[str, List[str], str, Dict[str, Any]]]:
+        """
+        Generates season queries (tavasz, nyár, ősz, tél).
+        """
+        results = []
+        for s in self.seasons:
+            query_id = f"season_{s['id']}"
+            terms = s.get("terms", [])
+            query_str = MekQueryBuilder.build_query(terms)
+            meta = {
+                "date_min_str": s.get("date_min"),
+                "date_max_str": s.get("date_max"),
+                "date_focus_str": s.get("date_focus"),
+                "day_of_week": None
+            }
+            results.append((query_id, terms, query_str, meta))
+        return results
+
+    def generate_weekday_queries(self) -> List[Tuple[str, List[str], str, Dict[str, Any]]]:
+        """
+        Generates day-of-week queries (hétfő, kedd, ..., vasárnap, hétvége).
+        """
+        results = []
+        for w in self.weekdays:
+            query_id = f"dow_{w['id']}"
+            terms = w.get("terms", [])
+            query_str = MekQueryBuilder.build_query(terms)
+            meta = {
+                "date_min_str": None,
+                "date_max_str": None,
+                "date_focus_str": None,
+                "day_of_week": w.get("dow")
+            }
+            results.append((query_id, terms, query_str, meta))
+        return results
+
+    def generate_special_queries(self) -> List[Tuple[str, List[str], str, Dict[str, Any]]]:
+        """
+        Generates special holiday / festival queries.
+        """
+        results = []
         for item in self.special_terms:
-            term = item.get('term')
-            mapped_dates = item.get('valid_dates', [])
+            term = item.get("term")
             if not term:
                 continue
-            if mapped_dates:
-                for mapped in mapped_dates:
-                    term_to_dates[term].add(mapped)
-            else:
-                term_to_dates[term]
-
-        return term_to_dates
+            query_id = f"special_{re.sub(r'[^a-zA-Z0-9_]', '_', term)}"
+            query_str = MekQueryBuilder.build_query([term])
+            meta = {
+                "date_min_str": item.get("date_min"),
+                "date_max_str": item.get("date_max"),
+                "date_focus_str": item.get("date_focus"),
+                "day_of_week": item.get("dow")
+            }
+            results.append((query_id, [term], query_str, meta))
+        return results
 
 
 class MekQueryBuilder:
@@ -262,11 +335,17 @@ class MekSearcher:
 
 def main():
     parser = argparse.ArgumentParser(description="Search MEK for calendar/date patterns with optimized HTTP query compression.")
-    parser.add_argument("--rules", default=str(REPO_ROOT / "calendar_rules.json5"), help="Path to calendar_rules.json5")
-    parser.add_argument("--limit", type=int, default=0, help="Max days to search (0 = all 366 days).")
-    parser.add_argument("--max-pages", type=int, default=5, help="Max pagination pages per date query (default: 5).")
+    parser.add_argument("--rules", default=str(REPO_ROOT / "rules_calendar.json5"), help="Path to rules_calendar.json5")
+    parser.add_argument("--limit", type=int, default=0, help="Max items to search (0 = all).")
+    parser.add_argument("--max-pages", type=int, default=5, help="Max pagination pages per exact date query (default: 5).")
+    parser.add_argument("--fuzzy-max-pages", type=int, default=3, help="Max pagination pages per fuzzy/season/weekday query (default: 3).")
     parser.add_argument("--output", default="mek_calendar_search_results.jsonl", help="Output file path.")
     parser.add_argument("--term", help="Search for a specific term directly.")
+    parser.add_argument("--dates-only", action="store_true", default=False, help="Search only 366 exact calendar dates.")
+    parser.add_argument("--seasons-only", action="store_true", default=False, help="Search only 4 seasons (tavasz, nyár, ősz, tél).")
+    parser.add_argument("--weekdays-only", action="store_true", default=False, help="Search only 7 weekdays and weekend.")
+    parser.add_argument("--month-parts-only", action="store_true", default=False, help="Search only month parts (elején/közepén/végén).")
+    parser.add_argument("--include-all", action="store_true", default=False, help="Search dates, month parts, seasons, weekdays, and special holidays.")
     parser.add_argument("--download-covers", action="store_true", default=False, help="Download cover images.")
     parser.add_argument("--visible", action="store_true", help="Kept for backward compatibility.")
     args = parser.parse_args()
@@ -277,7 +356,7 @@ def main():
         logging.error("Could not load rules. Exiting.")
         return
 
-    processed_dates = set()
+    processed_ids = set()
     output_path = Path(args.output)
     if output_path.exists():
         logging.info(f"Reading existing results from {output_path}...")
@@ -286,14 +365,15 @@ def main():
                 for line in f:
                     try:
                         record = json.loads(line)
-                        if "valid_dates" in record and record["valid_dates"]:
-                            for vd in record["valid_dates"]:
-                                processed_dates.add(vd)
+                        if "query_id" in record:
+                            processed_ids.add(record["query_id"])
+                        elif "date_min_str" in record and record["date_min_str"]:
+                            processed_ids.add(record["date_min_str"])
                         elif "search_term" in record:
-                            processed_dates.add(record["search_term"])
+                            processed_ids.add(record["search_term"])
                     except json.JSONDecodeError:
                         pass
-            logging.info(f"Found {len(processed_dates)} already processed dates/terms.")
+            logging.info(f"Found {len(processed_ids)} already processed items.")
         except Exception as e:
             logging.warning(f"Error reading existing file: {e}")
 
@@ -304,11 +384,25 @@ def main():
 
     try:
         generator = DateTermGenerator(rules)
-        date_queue = []
+        search_queue = []
 
         if args.term:
-            date_queue.append((args.term, [args.term], args.term))
+            meta = {"date_min_str": None, "date_max_str": None, "date_focus_str": None, "day_of_week": None}
+            search_queue.append((args.term, [args.term], args.term, args.max_pages, meta))
+        elif args.seasons_only:
+            logging.info("Generating season queries...")
+            for q_id, terms, q_str, meta in generator.generate_season_queries():
+                search_queue.append((q_id, terms, q_str, args.fuzzy_max_pages, meta))
+        elif args.weekdays_only:
+            logging.info("Generating weekday queries...")
+            for q_id, terms, q_str, meta in generator.generate_weekday_queries():
+                search_queue.append((q_id, terms, q_str, args.fuzzy_max_pages, meta))
+        elif args.month_parts_only:
+            logging.info("Generating month-part queries...")
+            for q_id, terms, q_str, meta in generator.generate_month_part_queries():
+                search_queue.append((q_id, terms, q_str, args.fuzzy_max_pages, meta))
         else:
+            # Default or include_all: 366 dates
             logging.info("Generating date terms and compressed queries for all 366 days...")
             for month_cfg in rules.get("months", []):
                 m_num = month_cfg.get("num")
@@ -316,52 +410,79 @@ def main():
                     date_str = f"{m_num:02}-{day:02}"
                     terms = generator.generate_terms_for_date(m_num, day)
                     query = MekQueryBuilder.build_query(terms)
-                    date_queue.append((date_str, terms, query))
+                    meta = {
+                        "date_min_str": date_str,
+                        "date_max_str": date_str,
+                        "date_focus_str": date_str,
+                        "day_of_week": None
+                    }
+                    search_queue.append((date_str, terms, query, args.max_pages, meta))
 
-            # Filter already processed
-            remaining = [item for item in date_queue if item[0] not in processed_dates]
-            if len(remaining) < len(date_queue):
-                logging.info(f"Skipping {len(date_queue) - len(remaining)} dates already processed. {len(remaining)} remaining.")
+            if args.include_all:
+                logging.info("Appending month parts, seasons, weekdays, and special terms to queue...")
+                for q_id, terms, q_str, meta in generator.generate_month_part_queries():
+                    search_queue.append((q_id, terms, q_str, args.fuzzy_max_pages, meta))
+                for q_id, terms, q_str, meta in generator.generate_season_queries():
+                    search_queue.append((q_id, terms, q_str, args.fuzzy_max_pages, meta))
+                for q_id, terms, q_str, meta in generator.generate_weekday_queries():
+                    search_queue.append((q_id, terms, q_str, args.fuzzy_max_pages, meta))
+                for q_id, terms, q_str, meta in generator.generate_special_queries():
+                    search_queue.append((q_id, terms, q_str, args.fuzzy_max_pages, meta))
 
-            if args.limit > 0:
-                logging.info(f"Test mode: selecting {args.limit} dates.")
-                date_queue = remaining[:args.limit]
-            else:
-                date_queue = remaining
+        # Filter already processed
+        remaining = [item for item in search_queue if item[0] not in processed_ids]
+        if len(remaining) < len(search_queue):
+            logging.info(f"Skipping {len(search_queue) - len(remaining)} items already processed. {len(remaining)} remaining.")
 
-        logging.info(f"Starting optimized MEK date search for {len(date_queue)} days...")
+        if args.limit > 0:
+            logging.info(f"Test mode: selecting {args.limit} items.")
+            search_queue = remaining[:args.limit]
+        else:
+            search_queue = remaining
+
+        logging.info(f"Starting optimized MEK calendar search for {len(search_queue)} queries...")
         start_time = time.time()
 
         with open(args.output, "a", encoding="utf-8") as f:
-            for i, (date_str, terms, query) in enumerate(date_queue):
-                logging.info(f"[{i + 1}/{len(date_queue)}] Searching date {date_str} ({len(terms)} terms compressed)...")
+            for i, (q_id, terms, query, q_max_pages, meta) in enumerate(search_queue):
+                logging.info(f"[{i + 1}/{len(search_queue)}] Searching {q_id} ({len(terms)} terms compressed, max {q_max_pages} pages)...")
+                orig_max_pages = searcher.max_pages
+                searcher.max_pages = q_max_pages
                 results = searcher.search(query)
-                valid_dates = [date_str] if "-" in date_str else []
+                searcher.max_pages = orig_max_pages
 
                 if results:
-                    logging.info(f"  -> Found {len(results)} valid matches for {date_str}.")
+                    logging.info(f"  -> Found {len(results)} valid matches for {q_id}.")
                     for res in results:
-                        res["valid_dates"] = valid_dates
+                        res["query_id"] = q_id
+                        res["date_min_str"] = meta.get("date_min_str")
+                        res["date_max_str"] = meta.get("date_max_str")
+                        res["date_focus_str"] = meta.get("date_focus_str")
+                        res["day_of_week"] = meta.get("day_of_week")
                         f.write(json.dumps(res, ensure_ascii=False) + "\n")
                 else:
-                    logging.info(f"  -> No matches for {date_str}.")
+                    logging.info(f"  -> No matches for {q_id}.")
                     no_match_record = {
+                        "query_id": q_id,
                         "search_term": query,
-                        "valid_dates": valid_dates,
+                        "date_min_str": meta.get("date_min_str"),
+                        "date_max_str": meta.get("date_max_str"),
+                        "date_focus_str": meta.get("date_focus_str"),
+                        "day_of_week": meta.get("day_of_week"),
                         "count": 0
                     }
                     f.write(json.dumps(no_match_record, ensure_ascii=False) + "\n")
                 f.flush()
 
                 done = i + 1
-                total = len(date_queue)
+                total = len(search_queue)
                 percent = (done / total) * 100 if total else 100.0
                 elapsed = time.time() - start_time
                 speed = done / elapsed if elapsed > 0 else 0.0
                 remaining_count = total - done
                 eta_s = int(remaining_count / speed) if speed > 0 else 0
                 eta_m, eta_sec = divmod(eta_s, 60)
-                logging.info(f"Progress: {done}/{total} ({percent:.1f}%) | Speed: {speed:.2f} day/s | ETA: {eta_m}m {eta_sec}s")
+                logging.info(f"Progress: {done}/{total} ({percent:.1f}%) | Speed: {speed:.2f} items/s | ETA: {eta_m}m {eta_sec}s")
 
     finally:
         searcher.close()
