@@ -23,9 +23,10 @@ def main():
     cur.execute("""
         SELECT t, count(*) 
         FROM (
-            SELECT unnest(valid_times) as t
+            SELECT time_min_str as t
             FROM entries e
             WHERE is_literature = TRUE
+            AND time_min_str IS NOT NULL
             AND NOT EXISTS (
                 SELECT 1 FROM votes v WHERE v.entry_id = e.id AND v.corrected_time = 'AI_DENY'
             )
@@ -41,9 +42,10 @@ def main():
     cur.execute("""
         SELECT t, count(*) 
         FROM (
-            SELECT unnest(valid_times) as t
+            SELECT time_min_str as t
             FROM entries e
             WHERE is_literature = TRUE
+            AND time_min_str IS NOT NULL
             AND ai_checked = TRUE
             AND NOT EXISTS (
                 SELECT 1 FROM votes v WHERE v.entry_id = e.id AND v.corrected_time = 'AI_DENY'
@@ -60,9 +62,10 @@ def main():
     cur.execute("""
         SELECT t, count(*) 
         FROM (
-            SELECT unnest(valid_times) as t
+            SELECT time_min_str as t
             FROM entries e
             WHERE is_literature = TRUE
+            AND time_min_str IS NOT NULL
         ) sub
         WHERE t ~ '^[0-9]{2}:[0-9]{2}$'
         GROUP BY t

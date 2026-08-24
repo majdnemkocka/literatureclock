@@ -167,22 +167,31 @@ def emit_record(rule_id: str, match_txt: str, s: int, e: int, text: str,
             "rule_id": rule_id,
             "match": match_txt,
             "norm_time": norm_time,
+            "time_min_str": norm_time,
+            "time_max_str": norm_time,
+            "time_focus_str": norm_time,
+            "time_min_m": minute,
+            "time_max_m": minute,
+            "time_focus_m": minute,
             "minute": minute,
             "minute_candidates": [minute],
-            "valid_times": [norm_time],
             "context": context
         }
     else:
         mins = [hhmm_to_minute(h, minute_value) for h in hour_candidates]
-        valid_times = [f"{m//60:02d}:{m%60:02d}" for m in mins]
-        norm_time = valid_times[0] if valid_times else None
+        norm_time = f"{mins[0]//60:02d}:{mins[0]%60:02d}" if mins else None
         return {
             "rule_id": rule_id,
             "match": match_txt,
             "norm_time": norm_time,
+            "time_min_str": norm_time,
+            "time_max_str": norm_time,
+            "time_focus_str": norm_time,
+            "time_min_m": mins[0] if mins else None,
+            "time_max_m": mins[0] if mins else None,
+            "time_focus_m": mins[0] if mins else None,
             "minute": mins[0] if mins else None,
             "minute_candidates": sorted(mins),
-            "valid_times": valid_times,
             "ambiguous_12h": True,
             "context": context
         }

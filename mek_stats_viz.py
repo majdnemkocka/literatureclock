@@ -21,7 +21,8 @@ def get_entries_for_time(target_time, only_literature=False):
                 if only_literature and not data.get('is_literature', False):
                     continue
                     
-                if target_time in data.get('valid_times', []):
+                matched_time = data.get('time_min_str') or data.get('norm_time')
+                if target_time == matched_time:
                     entries.append(data)
                     if len(entries) >= 5:
                         break
@@ -75,15 +76,13 @@ def main():
                 try:
                     data = json.loads(line)
                     is_lit = data.get('is_literature', False)
-                    valid_times = data.get('valid_times', [])
-                    
-                    for t in valid_times:
-                        if len(t) == 5 and t[2] == ':':
-                            minute_counts_all[t] += 1
-                            total_all += 1
-                            if is_lit:
-                                minute_counts_lit[t] += 1
-                                total_lit += 1
+                    matched_time = data.get('time_min_str') or data.get('norm_time')
+                    if matched_time and len(matched_time) == 5 and matched_time[2] == ':':
+                        minute_counts_all[matched_time] += 1
+                        total_all += 1
+                        if is_lit:
+                            minute_counts_lit[matched_time] += 1
+                            total_lit += 1
                 except json.JSONDecodeError:
                     continue
     except Exception as e:

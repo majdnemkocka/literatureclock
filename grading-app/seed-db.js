@@ -46,9 +46,21 @@ async function seedDatabase() {
         }
 
         // Insert into database with the correct columns
+        const timeMinStr = entry.time_min_str || entry.norm_time || null;
+        const timeMaxStr = entry.time_max_str || timeMinStr;
+        const timeFocusStr = entry.time_focus_str || timeMinStr;
+        const parseM = (s) => {
+          if (!s || !s.includes(':')) return null;
+          const [h, m] = s.split(':').map(Number);
+          return isNaN(h) || isNaN(m) ? null : h * 60 + m;
+        };
+        const timeMinM = entry.time_min_m !== undefined ? entry.time_min_m : parseM(timeMinStr);
+        const timeMaxM = entry.time_max_m !== undefined ? entry.time_max_m : parseM(timeMaxStr);
+        const timeFocusM = entry.time_focus_m !== undefined ? entry.time_focus_m : parseM(timeFocusStr);
+
         await sql`
-          INSERT INTO entries (title, link, snippet, is_literature, valid_times)
-          VALUES (${entry.title}, ${entry.link || ''}, ${entry.snippet}, ${entry.is_literature}, ${JSON.stringify(entry.valid_times || [])})
+          INSERT INTO entries (title, link, snippet, is_literature, time_min_str, time_max_str, time_focus_str, time_min_m, time_max_m, time_focus_m)
+          VALUES (${entry.title}, ${entry.link || ''}, ${entry.snippet}, ${entry.is_literature}, ${timeMinStr}, ${timeMaxStr}, ${timeFocusStr}, ${timeMinM}, ${timeMaxM}, ${timeFocusM})
         `;
 
         insertedCount++;

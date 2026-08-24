@@ -39,11 +39,11 @@ def deduplicate(input_file: str = 'scrapers/mek_search/mek_search_results.jsonl'
             total_count += 1
             try:
                 data = json.loads(stripped)
-                # Deduplicate by (identifier/title, norm_time/valid_times, cleaned snippet)
+                # Deduplicate by (identifier/title, norm_time/time_min_str, cleaned snippet)
                 key_id = data.get('urn') or data.get('link') or data.get('title', '')
-                valid_t = tuple(sorted(str(t) for t in data.get('valid_times', [])))
+                time_range = f"{data.get('time_min_str', '')}-{data.get('time_max_str', '')}" if data.get('time_min_str') else None
                 valid_d = tuple(sorted(str(d) for d in data.get('valid_dates', [])))
-                key_time = data.get('norm_time') or (valid_t if valid_t else None) or (valid_d if valid_d else None) or ''
+                key_time = data.get('norm_time') or time_range or (valid_d if valid_d else None) or ''
                 key_snip = normalize_snippet_for_hash(data.get('snippet', ''))
                 semantic_hash = hashlib.md5(f"{key_id}|{key_time}|{key_snip}".encode('utf-8')).hexdigest()
             except Exception:

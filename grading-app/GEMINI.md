@@ -62,7 +62,12 @@ npm run preview
 ### `entries` Table
 - `id`: Primary Key
 - `snippet`: The literary quote (HTML supported).
-- `valid_times`: Array of detected times (e.g., `["14:30"]`).
+- `time_min_str`: Interval start time string (e.g. "14:30").
+- `time_max_str`: Interval end time string (e.g. "14:30").
+- `time_focus_str`: Interval focus time string (e.g. "14:30").
+- `time_min_m`: Interval start minute of day (0..1439).
+- `time_max_m`: Interval end minute of day.
+- `time_focus_m`: Interval focus minute of day.
 - `author`: Author of the work.
 - `title`: Title of the work.
 - `link`: Source link (e.g., Google Books).

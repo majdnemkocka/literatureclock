@@ -37,7 +37,12 @@ CREATE TABLE entries (
     link TEXT,
     snippet TEXT,
     is_literature BOOLEAN,
-    valid_times TEXT[],
+    time_min_str VARCHAR(7),
+    time_max_str VARCHAR(7),
+    time_focus_str VARCHAR(7),
+    time_min_m SMALLINT,
+    time_max_m SMALLINT,
+    time_focus_m SMALLINT,
     categories TEXT[],
     urn TEXT,
     author TEXT,
@@ -59,6 +64,8 @@ CREATE TABLE votes (
 
 CREATE INDEX IF NOT EXISTS idx_entries_ai_checked ON entries(ai_checked);
 CREATE INDEX IF NOT EXISTS idx_entries_is_lit ON entries(is_literature);
+CREATE INDEX IF NOT EXISTS idx_entries_time_min_m ON entries(time_min_m);
+CREATE INDEX IF NOT EXISTS idx_entries_time_max_m ON entries(time_max_m);
 
 -- Insert Data
 """)
@@ -76,7 +83,27 @@ CREATE INDEX IF NOT EXISTS idx_entries_is_lit ON entries(is_literature);
                     snippet = data.get('snippet', '')
                     is_lit = 'true' if str(data.get('is_literature', False)).strip().lower() in ('1', 'true', 'yes') else 'false'
                     
-                    valid_times_str = escape_sql_array(data.get('valid_times', []))
+                    time_min_str = data.get('time_min_str') or data.get('norm_time')
+                    time_max_str = data.get('time_max_str') or time_min_str
+                    time_focus_str = data.get('time_focus_str') or time_min_str
+
+                    def to_m(s):
+                        if not s or ':' not in s:
+                            return None
+                        try:
+                            parts = s.split(':')
+                            return int(parts[0]) * 60 + int(parts[1])
+                        except Exception:
+                            return None
+
+                    time_min_m = data.get('time_min_m') if data.get('time_min_m') is not None else to_m(time_min_str)
+                    time_max_m = data.get('time_max_m') if data.get('time_max_m') is not None else to_m(time_max_str)
+                    time_focus_m = data.get('time_focus_m') if data.get('time_focus_m') is not None else to_m(time_focus_str)
+
+                    min_m_val = str(time_min_m) if time_min_m is not None else "NULL"
+                    max_m_val = str(time_max_m) if time_max_m is not None else "NULL"
+                    foc_m_val = str(time_focus_m) if time_focus_m is not None else "NULL"
+
                     categories_str = escape_sql_array(data.get('topics', []))
 
                     urn = data.get('urn', '')
@@ -87,8 +114,8 @@ CREATE INDEX IF NOT EXISTS idx_entries_is_lit ON entries(is_literature);
                     is_fallback = 'true' if str(data.get('is_fallback', False)).strip().lower() in ('1', 'true', 'yes') else 'false'
 
                     sql = (
-                        f"INSERT INTO entries (title, link, snippet, is_literature, valid_times, categories, urn, author, genre, source_url, source_type, is_fallback) "
-                        f"VALUES ({escape_sql(title)}, {escape_sql(link)}, {escape_sql(snippet)}, {is_lit}, {valid_times_str}, {categories_str}, "
+                        f"INSERT INTO entries (title, link, snippet, is_literature, time_min_str, time_max_str, time_focus_str, time_min_m, time_max_m, time_focus_m, categories, urn, author, genre, source_url, source_type, is_fallback) "
+                        f"VALUES ({escape_sql(title)}, {escape_sql(link)}, {escape_sql(snippet)}, {is_lit}, {escape_sql(time_min_str)}, {escape_sql(time_max_str)}, {escape_sql(time_focus_str)}, {min_m_val}, {max_m_val}, {foc_m_val}, {categories_str}, "
                         f"{escape_sql(urn)}, {escape_sql(author)}, {escape_sql(genre)}, {escape_sql(source_url)}, {escape_sql(source_type)}, {is_fallback});\n"
                     )
                     sql_file.write(sql)

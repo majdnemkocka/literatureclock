@@ -39,12 +39,11 @@ def get_hits_stats(jsonl_path='hits.jsonl') -> Dict[str, Any]:
 
             total_hits += 1
 
-            # Extract normalized times from either norm_time or valid_times
-            if data.get('norm_time'):
+            # Extract normalized times from time_min_str or norm_time
+            if data.get('time_min_str'):
+                norm_times.add(data['time_min_str'])
+            elif data.get('norm_time'):
                 norm_times.add(data['norm_time'])
-            elif data.get('valid_times'):
-                for t in data['valid_times']:
-                    norm_times.add(t)
 
             if data.get('rule_id'):
                 rule_id = data['rule_id']

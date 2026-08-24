@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-One-shot migration: add time interval columns to entries, drop valid_times.
+One-shot migration: add time interval columns to entries.
 Safe to re-run (idempotent).
 """
 import os
@@ -30,8 +30,6 @@ cur.execute("""
     CREATE INDEX IF NOT EXISTS idx_entries_time_min_m ON entries(time_min_m);
     CREATE INDEX IF NOT EXISTS idx_entries_time_max_m ON entries(time_max_m);
 """)
-
-cur.execute("ALTER TABLE entries DROP COLUMN IF EXISTS valid_times;")
 
 conn.commit()
 cur.close()

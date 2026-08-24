@@ -43,7 +43,10 @@
     function getExpectedValue(currentEntry) {
         if (!currentEntry) return '';
         if (dataset === 'date') return currentEntry.valid_dates ? currentEntry.valid_dates[0] : '';
-        return currentEntry.valid_times ? currentEntry.valid_times[0] : '';
+        if (currentEntry.time_min_str && currentEntry.time_max_str && currentEntry.time_min_str !== currentEntry.time_max_str) {
+            return `${currentEntry.time_min_str} – ${currentEntry.time_max_str}`;
+        }
+        return currentEntry.time_min_str || '';
     }
 
     async function fetchStats() {
@@ -78,8 +81,8 @@
                     if (dataset === 'time') {
                         if (entry.ai_am_pm && ['am', 'pm', 'ambiguous'].includes(entry.ai_am_pm.toLowerCase())) {
                             timeClass = entry.ai_am_pm.toLowerCase();
-                        } else if (entry.valid_times && entry.valid_times.length === 1) {
-                            const hour = parseInt(entry.valid_times[0].split(':')[0], 10);
+                        } else if (entry.time_min_str) {
+                            const hour = parseInt(entry.time_min_str.split(':')[0], 10);
                             if (!isNaN(hour)) {
                                 timeClass = hour >= 12 ? 'pm' : 'am';
                             }
@@ -466,7 +469,7 @@
                                 <div class="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
                                     <div class="flex items-center justify-between gap-2 mb-2 text-[11px] text-gray-500">
                                         <span class="font-mono">#{sample.id}</span>
-                                        <span class="truncate">{dataset === 'date' ? sample.valid_dates : sample.valid_times}</span>
+                                        <span class="truncate">{dataset === 'date' ? sample.valid_dates : (sample.display_time || sample.time_min_str || '')}</span>
                                     </div>
                                     {#if sample.ai_rating !== null || sample.ai_reason}
                                         <div class="mb-2 p-2 bg-blue-50 border border-blue-100 rounded text-[11px] text-blue-900">

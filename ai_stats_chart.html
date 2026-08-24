@@ -25,19 +25,19 @@
         
         <div class="stats-grid">
             <div class="stat-box">
-                <div class="stat-val">3061</div>
+                <div class="stat-val">200</div>
                 <div class="stat-label">Total AI Checked</div>
             </div>
             <div class="stat-box">
-                <div class="stat-val">0.50</div>
+                <div class="stat-val">4.40</div>
                 <div class="stat-label">Mean Rating</div>
             </div>
             <div class="stat-box">
-                <div class="stat-val">0</div>
+                <div class="stat-val">5.0</div>
                 <div class="stat-label">Median Rating</div>
             </div>
             <div class="stat-box">
-                <div class="stat-val">2672</div>
+                <div class="stat-val">23</div>
                 <div class="stat-label">Denied (0 stars)</div>
             </div>
         </div>
@@ -63,7 +63,7 @@
                 labels: ["0", "1", "2", "3", "4", "5"],
                 datasets: [{
                     label: 'Number of Entries',
-                    data: [2672, 71, 37, 4, 2, 275],
+                    data: [23, 0, 0, 0, 5, 172],
                     backgroundColor: [
                         'rgba(234, 67, 53, 0.7)',  // 0
                         'rgba(251, 188, 5, 0.7)',   // 1
@@ -87,9 +87,9 @@
         new Chart(ctxDenied, {
             type: 'pie',
             data: {
-                labels: ["Meta-text (General)", "Meta-text (TOC)", "Date/Format", "Gibberish", "Meta-text (Bibliography)", "Not a Time", "Comment", "Chapter Numbers", "Other"],
+                labels: ["Other"],
                 datasets: [{
-                    data: [1015, 959, 486, 96, 72, 16, 13, 10, 5],
+                    data: [23],
                     backgroundColor: [
                         '#4285F4', '#EA4335', '#FBBC05', '#34A853',
                         '#FF6D01', '#46BDC6', '#7BAAF7', '#F07B72'

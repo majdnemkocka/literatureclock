@@ -154,7 +154,7 @@ Interval width guidelines:
 def get_unchecked_entries(cur, limit):
     if RE_GRADE_AI_ONLY:
         cur.execute("""
-            SELECT e.id, e.title, e.snippet, e.valid_times, e.source_url
+            SELECT e.id, e.title, e.snippet, e.time_min_str, e.source_url
             FROM entries e
             WHERE e.ai_checked IS FALSE
               AND e.is_literature IS TRUE
@@ -169,7 +169,7 @@ def get_unchecked_entries(cur, limit):
         """, (limit,))
     else:
         cur.execute("""
-            SELECT id, title, snippet, valid_times, source_url
+            SELECT id, title, snippet, time_min_str, source_url
             FROM entries
             WHERE ai_checked IS FALSE
               AND is_literature IS TRUE
@@ -277,7 +277,7 @@ def process_batch(cur, entries):
     max_length = -1
 
     for e in entries:
-        # e = (id, title, snippet, valid_times, source_url)
+        # e = (id, title, snippet, time_min_str, source_url)
         
         # Preprocess snippet: strip HTML and truncate
         raw_snippet = e[2] or ""

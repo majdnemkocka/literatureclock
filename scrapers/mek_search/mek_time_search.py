@@ -432,7 +432,6 @@ class MekSearcher:
                             deep_success = True
                             for rec in extracted_records:
                                 norm_t = rec.get("norm_time")
-                                valid_time_list = rec.get("valid_times", [norm_t] if norm_t else [])
                                 deep_item = {
                                     "search_term": term,
                                     "title": meta.get("title") or res["title"],
@@ -444,10 +443,15 @@ class MekSearcher:
                                     "snippet": rec["context"],
                                     "matched_text": rec["match"],
                                     "norm_time": norm_t,
+                                    "time_min_str": rec.get("time_min_str", norm_t),
+                                    "time_max_str": rec.get("time_max_str", norm_t),
+                                    "time_focus_str": rec.get("time_focus_str", norm_t),
+                                    "time_min_m": rec.get("time_min_m", rec.get("minute")),
+                                    "time_max_m": rec.get("time_max_m", rec.get("minute")),
+                                    "time_focus_m": rec.get("time_focus_m", rec.get("minute")),
                                     "minute": rec.get("minute"),
                                     "minute_candidates": rec.get("minute_candidates"),
                                     "rule_id": rec.get("rule_id"),
-                                    "valid_times": valid_time_list,
                                     "is_literature": is_lit,
                                     "topics": topics,
                                     "urn": meta.get("urn", ""),
@@ -471,15 +475,17 @@ class MekSearcher:
                 fb_records = list(extract(fb_text, self.rules)) if self.rules else []
                 if fb_records:
                     res["norm_time"] = fb_records[0].get("norm_time")
-                    res["valid_times"] = fb_records[0].get("valid_times", [res["norm_time"]] if res["norm_time"] else [])
+                    res["time_min_str"] = fb_records[0].get("time_min_str", res["norm_time"])
+                    res["time_max_str"] = fb_records[0].get("time_max_str", res["norm_time"])
+                    res["time_focus_str"] = fb_records[0].get("time_focus_str", res["norm_time"])
                     res["matched_text"] = fb_records[0].get("match")
                 else:
                     term_records = list(extract(term, self.rules)) if self.rules else []
                     if term_records:
                         res["norm_time"] = term_records[0].get("norm_time")
-                        res["valid_times"] = term_records[0].get("valid_times", [res["norm_time"]] if res["norm_time"] else [])
-                    else:
-                        res["valid_times"] = []
+                        res["time_min_str"] = term_records[0].get("time_min_str", res["norm_time"])
+                        res["time_max_str"] = term_records[0].get("time_max_str", res["norm_time"])
+                        res["time_focus_str"] = term_records[0].get("time_focus_str", res["norm_time"])
                 res["source_type"] = "snippet_fallback"
                 res["is_fallback"] = True
                 res["is_literature"] = is_lit
@@ -586,14 +592,14 @@ def main():
                 if results:
                     logging.info(f"  -> Found {len(results)} valid matches for {time_str}.")
                     for res in results:
-                        if not res.get("valid_times"):
-                            res["valid_times"] = [time_str]
+                        if not res.get("time_min_str") and not res.get("norm_time"):
+                            res["time_min_str"] = time_str
                         f.write(json.dumps(res, ensure_ascii=False) + "\n")
                 else:
                     logging.info(f"  -> No matches for {time_str}.")
                     no_match_record = {
                         "search_term": query,
-                        "valid_times": [time_str] if ":" in time_str else [],
+                        "time_min_str": time_str if ":" in time_str else None,
                         "count": 0
                     }
                     f.write(json.dumps(no_match_record, ensure_ascii=False) + "\n")

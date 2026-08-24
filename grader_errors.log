@@ -1,0 +1,2 @@
+2026-08-24 03:17:08 | Error: [Errno 22] Invalid argument for batch starting with ID 9
+2026-08-24 03:33:05 | Error: 'NoneType' object has no attribute 'content' for batch starting with ID 255

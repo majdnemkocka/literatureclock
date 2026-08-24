@@ -32,7 +32,7 @@ def fetch_gemini_models(api_key: Optional[str] = None) -> List[Tuple[str, str]]:
     and removes non-text/specialized preview models (robotics, tts, image-only, audio).
     Sorts dynamically by version descending so the latest release is on top.
     """
-    key = api_key or os.environ.get("GEMINI_API_KEY")
+    key = api_key if api_key is not None else os.environ.get("GEMINI_API_KEY")
     if not key or not key.strip():
         return DEFAULT_GEMINI_MODELS
 

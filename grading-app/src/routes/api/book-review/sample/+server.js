@@ -21,7 +21,14 @@ export async function GET({ url }) {
                 LIMIT ${limit}
             `
             : await sql`
-                SELECT id, title, NULL::text AS author, snippet, valid_times, ai_checked, ai_rating, ai_reason, link
+                SELECT id, title, NULL::text AS author, snippet,
+                       time_min_str, time_max_str, time_focus_str,
+                       CASE
+                           WHEN time_min_str IS NULL THEN ''
+                           WHEN time_max_str IS NULL OR time_min_str = time_max_str THEN time_min_str
+                           ELSE time_min_str || ' – ' || time_max_str
+                       END AS display_time,
+                       ai_checked, ai_rating, ai_reason, link
                 FROM entries
                 WHERE title = ${title}
                 ORDER BY RANDOM()
