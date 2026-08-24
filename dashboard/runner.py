@@ -53,8 +53,10 @@ class ProcessRunner:
 
         # Merge environment
         merged_env = os.environ.copy()
-        # Ensure unbuffered python output
+        # Ensure unbuffered and UTF-8 encoded python subprocess I/O
         merged_env["PYTHONUNBUFFERED"] = "1"
+        merged_env["PYTHONIOENCODING"] = "utf-8"
+        merged_env["PYTHONUTF8"] = "1"
         if self.env:
             merged_env.update(self.env)
 
@@ -72,7 +74,14 @@ class ProcessRunner:
                     line = await stream.readline()
                     if not line:
                         break
-                    decoded = line.decode("utf-8", errors="replace").rstrip("\r\n")
+                    try:
+                        decoded = line.decode("utf-8")
+                    except UnicodeDecodeError:
+                        try:
+                            decoded = line.decode("cp1250")
+                        except UnicodeDecodeError:
+                            decoded = line.decode("utf-8", errors="replace")
+                    decoded = decoded.rstrip("\r\n")
                     if self.on_line:
                         self.on_line(decoded, is_err)
 
