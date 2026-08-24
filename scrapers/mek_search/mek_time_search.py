@@ -25,6 +25,10 @@ if str(REPO_ROOT / 'scrapers') not in sys.path:
 from mek_metadata import MekMetadataFetcher
 from extractor import extract_from_html, extract, raw_html_to_text, load_rules
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 

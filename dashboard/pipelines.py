@@ -26,17 +26,17 @@ def get_all_pipelines() -> List[Pipeline]:
             parameters=[
                 StepParameter("limit", "Keresési limit (0 = mind)", "int", 50, 50, flag_name="--limit", description="Maximálisan keresendő kifejezések"),
                 StepParameter("deep_extract", "Mélykeresés (fejezet letöltés)", "bool", True, True, flag_name="--deep-extract", description="Teljes fejezetek letöltése kerek bekezdésekért"),
+                StepParameter("include_dayparts", "Napszakok keresése is", "bool", False, False, flag_name="--include-dayparts", description="Napszavak (reggel, este, délután) keresése is"),
                 StepParameter("download_covers", "Borítóképek letöltése", "bool", False, False, flag_name="--download-covers", description="Könyvborítók mentése covers/ mappába"),
-                StepParameter("visible", "Böngésző láthatóvá tétele", "bool", False, False, flag_name="--visible", description="Selenium böngészőablak megnyitása"),
             ],
-            output_files=["scrapers/mek_search/mek_search_results.jsonl"],
+            output_files=["scrapers/mek_search/mek_time_search_results.jsonl"],
         ),
         PipelineStep(
             id="seed",
             title="2. Adatbázis Inicializálás & Feltöltés",
             description="PostgreSQL 'entries' és 'votes' táblák létrehozása és a talált idézetek betöltése.",
             command=[py, "seed_db.py"],
-            required_files=["scrapers/mek_search/mek_search_results.jsonl"],
+            required_files=["scrapers/mek_search/mek_time_search_results.jsonl"],
             required_env=["DATABASE_URL"],
         ),
         PipelineStep(
@@ -73,20 +73,19 @@ def get_all_pipelines() -> List[Pipeline]:
         PipelineStep(
             id="cal_search",
             title="1. MEK Naptári Dátum Keresés",
-            description="Naptári kifejezések (hónap, nap) keresése a MEK-en LOD metaadatokkal.",
+            description="Naptári kifejezések (hónap, nap, évszakok, hét napjai) keresése a MEK-en.",
             command=[py, "scrapers/mek_search/mek_calendar_search.py"],
             parameters=[
-                StepParameter("limit", "Keresési limit", "int", 50, 50, flag_name="--limit"),
-                StepParameter("deep_extract", "Mélykeresés", "bool", True, True, flag_name="--deep-extract"),
+                StepParameter("limit", "Keresési limit (0 = mind)", "int", 50, 50, flag_name="--limit"),
+                StepParameter("include_all", "Minden keresési típus bevonása", "bool", False, False, flag_name="--include-all", description="Dátumok, hónaprészek, évszakok, napok keresése"),
             ],
             output_files=["scrapers/mek_search/mek_calendar_search_results.jsonl"],
         ),
         PipelineStep(
             id="cal_migrate",
             title="2. Naptár DB Migráció",
-            description="Naptári táblák létrehozása az adatbázisban.",
-            command=["node", "migrate_calendar.js"],
-            cwd="grading-app",
+            description="Naptári táblák létrehozása és intervallum-oszlopok biztosítása az adatbázisban.",
+            command=[py, "migrate_add_calendar_interval_cols.py"],
             required_env=["DATABASE_URL"],
         ),
         PipelineStep(
@@ -134,9 +133,9 @@ def get_all_pipelines() -> List[Pipeline]:
     diag_steps = [
         PipelineStep(
             id="run_tests",
-            title="1. Projekt Egységtesztek Futtatása",
-            description="Időpont-szabályok, LOD metaadatok és gyorsítótárazás ellenőrzése pytesttel.",
-            command=[py, "-m", "pytest", "tests/test_rules_and_terms.py", "-v"],
+            title="1. Teljes Tesztcsomag Futtatása",
+            description="Minden egységteszt (időpontok, naptár, napszakok, AI grader, selectorok) ellenőrzése pytesttel.",
+            command=[py, "-m", "pytest", "tests/", "-v"],
         ),
         PipelineStep(
             id="dedup_check",
@@ -148,7 +147,7 @@ def get_all_pipelines() -> List[Pipeline]:
 
     return [
         Pipeline("clock", "Irodalmi Óra Folyamat (Literature Clock)", "Hibrid keresés, betöltés, AI pontozás és webes megjelenítés.", "🕒", clock_steps),
-        Pipeline("calendar", "Irodalmi Naptár Folyamat (Literature Calendar)", "Éves naptári napok idézeteinek gyűjtése és feldolgozása.", "📅", calendar_steps),
+        Pipeline("calendar", "Irodalmi Naptár Folyamat (Literature Calendar)", "Éves naptári napok, évszakok és napok idézeteinek gyűjtése.", "📅", calendar_steps),
         Pipeline("offline", "Offline Könyvtár & Batch Feldolgozás", "Teljes kötetek letöltése és offline időpont-kinyerés.", "📚", offline_steps),
         Pipeline("diagnostics", "Diagnosztika & Tesztek", "Rendszer-ellenőrzés, duplikáció-szűrés és egységtesztek.", "🧪", diag_steps),
     ]
@@ -161,26 +160,31 @@ def get_all_script_tasks() -> List[ScriptTask]:
             id="time_search",
             category="Keresés & Scraper",
             title="MEK Időpont Kereső (mek_time_search.py)",
-            description="Időpont-kifejezések keresése a MEK-en mély fejezet-extrakcióval és LOD metaadatokkal.",
+            description="Időpont-kifejezések keresése a MEK-en mély fejezet-extrakcióval és napszakokkal.",
             command=[py, "scrapers/mek_search/mek_time_search.py"],
             parameters=[
                 StepParameter("limit", "Limit", "int", 50, 50, flag_name="--limit"),
                 StepParameter("term", "Egyedi kifejezés", "str", "", "", flag_name="--term"),
                 StepParameter("deep_extract", "Mélykeresés", "bool", True, True, flag_name="--deep-extract"),
+                StepParameter("dayparts_only", "Csak napszakok", "bool", False, False, flag_name="--dayparts-only"),
+                StepParameter("include_dayparts", "Napszakok is", "bool", False, False, flag_name="--include-dayparts"),
                 StepParameter("download_covers", "Borítók letöltése", "bool", False, False, flag_name="--download-covers"),
-                StepParameter("visible", "Látható böngésző", "bool", False, False, flag_name="--visible"),
             ],
         ),
         ScriptTask(
             id="calendar_search",
             category="Keresés & Scraper",
             title="MEK Naptár Kereső (mek_calendar_search.py)",
-            description="Naptári dátumok keresése a MEK-en.",
+            description="Naptári dátumok, évszakok és hét napjainak keresése a MEK-en wildcarddal.",
             command=[py, "scrapers/mek_search/mek_calendar_search.py"],
             parameters=[
                 StepParameter("limit", "Limit", "int", 50, 50, flag_name="--limit"),
                 StepParameter("term", "Egyedi kifejezés", "str", "", "", flag_name="--term"),
-                StepParameter("deep_extract", "Mélykeresés", "bool", True, True, flag_name="--deep-extract"),
+                StepParameter("dates_only", "Csak 366 dátum", "bool", False, False, flag_name="--dates-only"),
+                StepParameter("seasons_only", "Csak 4 évszak", "bool", False, False, flag_name="--seasons-only"),
+                StepParameter("weekdays_only", "Csak hét napjai", "bool", False, False, flag_name="--weekdays-only"),
+                StepParameter("month_parts_only", "Csak hónap részei", "bool", False, False, flag_name="--month-parts-only"),
+                StepParameter("include_all", "Minden naptári keresés", "bool", False, False, flag_name="--include-all"),
             ],
         ),
         ScriptTask(
@@ -220,11 +224,27 @@ def get_all_script_tasks() -> List[ScriptTask]:
             required_env=["DATABASE_URL"],
         ),
         ScriptTask(
+            id="migrate_time",
+            category="Adatbázis",
+            title="Óra Intervallum Migráció (migrate_add_time_interval_cols.py)",
+            description="Időpont-intervallum (time_min/max/focus) oszlopok létrehozása az adatbázisban.",
+            command=[py, "migrate_add_time_interval_cols.py"],
+            required_env=["DATABASE_URL"],
+        ),
+        ScriptTask(
             id="seed_calendar_db",
             category="Adatbázis",
             title="Naptár Adatbázis Seeder (seed_calendar_db.py)",
             description="Naptári adatok betöltése az adatbázisba.",
             command=[py, "seed_calendar_db.py"],
+            required_env=["DATABASE_URL"],
+        ),
+        ScriptTask(
+            id="migrate_calendar",
+            category="Adatbázis",
+            title="Naptár Intervallum Migráció (migrate_add_calendar_interval_cols.py)",
+            description="Naptári intervallum és nap (date_min/max/focus, day_of_week) oszlopok létrehozása az adatbázisban.",
+            command=[py, "migrate_add_calendar_interval_cols.py"],
             required_env=["DATABASE_URL"],
         ),
         ScriptTask(

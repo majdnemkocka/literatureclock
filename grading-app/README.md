@@ -1,49 +1,46 @@
-# Literature Clock Grading App
+# Literature Clock & Calendar Grading App
 
-A generic, mobile-first SvelteKit application for grading literature quotes and classifying them as AM/PM.
+Mobilbarát, modern SvelteKit webalkalmazás a magyar irodalmi óra (Literature Clock) és naptár (Literature Calendar) találatainak emberi áttekintésére, osztályozására és pontozására.
 
-## Setup
+---
 
-### 1. Database (Neon Postgres)
+## 🌟 Funkciók
 
-1.  Create a new project at [neon.tech](https://neon.tech).
-2.  Get your **Connection String** (Pooled is recommended for serverless).
-3.  Run the SQL commands from `../seed.sql` in the Neon SQL Editor to create the tables (`entries`, `votes`) and populate them with data.
+- **Kettős üzemmód:**
+  - **Time Mode (Óra):** 1440 perc és napszakok (`time_min_str` – `time_max_str`) megjelenítése, szavazás, AM/PM és időpont javítás.
+  - **Date Mode (Naptár):** 366 naptári nap, évszakok, hónaprészek és hét napjai szerinti idézetek áttekintése.
+- **Könyv-szintű minőségellenőrzés:** Book Review nézet az egyes kötetek találatainak aggregált pontozásához és törléséhez.
+- **Statisztika és szűrés:** AI minősítés (0–5 pont), jóváhagyott/elutasított szűrések, hiányzó percek/napok hőtérképe.
 
-### 2. Environment Variables
+---
 
-1.  Copy the example file:
-    ```bash
-    cp .env.example .env
-    ```
-2.  Edit `.env` and set your `DATABASE_URL`:
-    ```
-    DATABASE_URL=postgres://user:password@ep-host.neon.tech/neondb
-    ```
+## 🛠️ Telepítés és Futtatás
 
-### 3. Development
+### 1. Környezeti változók
+Másold át a `.env.example` fájlt vagy állítsd be a `DATABASE_URL` változót:
+```bash
+DATABASE_URL=postgres://user:password@ep-host.neon.tech/neondb
+```
 
-Install dependencies (if you haven't already):
+### 2. Adatbázis migráció
+Futtasd le az adatbázis sémát inicializáló scripteket a gyökérkönyvtárból:
+```bash
+python migrate_add_time_interval_cols.py
+python migrate_add_calendar_interval_cols.py
+```
+
+### 3. Fejlesztői szerver indítása
 ```bash
 npm install
-```
-
-Start the server:
-```bash
 npm run dev
 ```
+Nyisd meg a böngészőben: `http://localhost:5173`.
 
-### 4. Deployment (Vercel)
+---
 
-This project is configured with `@sveltejs/adapter-auto`, which works seamlessly with Vercel.
+## 🚀 Technológiai Verem
 
-1.  Push this code to GitHub/GitLab/Bitbucket.
-2.  Import the project in Vercel.
-3.  **Crucial:** Add the `DATABASE_URL` to the **Environment Variables** in your Vercel Project Settings.
-4.  Deploy!
-
-## Tech Stack
-
-*   **Framework:** SvelteKit
-*   **Styling:** Tailwind CSS
-*   **Database:** Neon (PostgreSQL) via `@neondatabase/serverless`
+* **Frontend & Backend:** SvelteKit 2
+* **Stílus:** Tailwind CSS
+* **Adatbázis:** Neon PostgreSQL (`@neondatabase/serverless` & `psycopg2`)
+* **Telepítés:** Vercel kompatibilis (`@sveltejs/adapter-auto`)

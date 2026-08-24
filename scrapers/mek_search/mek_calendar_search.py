@@ -22,7 +22,9 @@ if str(REPO_ROOT) not in sys.path:
 if str(REPO_ROOT / 'scrapers') not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / 'scrapers'))
 
-from mek_metadata import MekMetadataFetcher
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
