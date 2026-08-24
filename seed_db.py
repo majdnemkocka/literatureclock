@@ -34,7 +34,6 @@ def seed():
             link TEXT,
             snippet TEXT,
             is_literature BOOLEAN,
-            valid_times TEXT[],
             categories TEXT[],
             urn TEXT,
             author TEXT,
@@ -45,7 +44,13 @@ def seed():
             ai_rating INTEGER,
             ai_reason TEXT,
             ai_am_pm TEXT,
-            ai_checked BOOLEAN DEFAULT FALSE
+            ai_checked BOOLEAN DEFAULT FALSE,
+            time_min_str    VARCHAR(7),
+            time_max_str    VARCHAR(7),
+            time_focus_str  VARCHAR(7),
+            time_min_m      SMALLINT,
+            time_max_m      SMALLINT,
+            time_focus_m    SMALLINT
         );
 
         CREATE TABLE votes (
@@ -59,6 +64,8 @@ def seed():
 
         CREATE INDEX IF NOT EXISTS idx_entries_ai_checked ON entries(ai_checked);
         CREATE INDEX IF NOT EXISTS idx_entries_is_lit ON entries(is_literature);
+        CREATE INDEX IF NOT EXISTS idx_entries_time_min_m ON entries(time_min_m);
+        CREATE INDEX IF NOT EXISTS idx_entries_time_max_m ON entries(time_max_m);
     """)
 
     print("Reading entries and batch inserting...")
@@ -76,7 +83,6 @@ def seed():
                     data.get('link', ''),
                     data.get('snippet', ''),
                     str(data.get('is_literature', False)).strip().lower() in ('1', 'true', 'yes'),
-                    data.get('valid_times', []),
                     data.get('topics', []),
                     data.get('urn', ''),
                     data.get('author', ''),
@@ -105,7 +111,7 @@ def seed():
 def insert_batch(cur, batch):
     query = """
         INSERT INTO entries (
-            title, link, snippet, is_literature, valid_times, categories,
+            title, link, snippet, is_literature, categories,
             urn, author, genre, source_url, source_type, is_fallback
         ) VALUES %s
     """
