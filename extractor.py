@@ -207,7 +207,10 @@ def extract(text: str, rules: dict) -> Iterable[dict]:
             match_txt = m.group(0)
 
             if kind == "clock_hh_mm":
-                h, mm = int(m.group(1)), int(m.group(2))
+                try:
+                    h, mm = int(m.group(1)), int(m.group(2))
+                except (ValueError, TypeError):
+                    continue
                 raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, [h], mm)))
 
             elif kind == "clock_words_maybe_digits":
@@ -219,7 +222,10 @@ def extract(text: str, rules: dict) -> Iterable[dict]:
                     continue
                 h_cands = disambiguate_hour_candidates(h_raw, ctx)
                 if min_digits:
-                    mm = int(min_digits)
+                    try:
+                        mm = int(min_digits)
+                    except (ValueError, TypeError):
+                        continue
                 elif min_word:
                     mm = parse_hu_number_word(min_word)
                     if mm is None or mm > 59:
@@ -229,14 +235,20 @@ def extract(text: str, rules: dict) -> Iterable[dict]:
                 raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, h_cands, mm)))
 
             elif kind == "oclock_h":
-                h = int(m.group(1))
+                try:
+                    h = int(m.group(1))
+                except (ValueError, TypeError):
+                    continue
                 raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, [h], 0)))
 
             elif kind in ("half_next_hour","quarter_next_hour","threequarter_next_hour"):
                 target = m.group(1)
                 # target can be digit or word
                 if target.isdigit():
-                    to_h = int(target)
+                    try:
+                        to_h = int(target)
+                    except (ValueError, TypeError):
+                        continue
                 else:
                     to_h = rules["word2hour"].get(norm(target), None)
                     if to_h is None:
@@ -250,31 +262,37 @@ def extract(text: str, rules: dict) -> Iterable[dict]:
                 raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, hours, mm)))
 
             elif kind == "after_minutes":
-                g = m.groups()
-                y_digits = next((int(v) for v in (g[0], g[4]) if v and v.isdigit()), None)
-                y_word   = next((v for v in (g[1], g[5]) if v), None)
-                x_hour   = next((int(v) for v in (g[2], g[3]) if v and v.isdigit()), None)
-                if x_hour is None:
+                try:
+                    g = m.groups()
+                    y_digits = next((int(v) for v in (g[0], g[4]) if v and v.isdigit()), None)
+                    y_word   = next((v for v in (g[1], g[5]) if v), None)
+                    x_hour   = next((int(v) for v in (g[2], g[3]) if v and v.isdigit()), None)
+                    if x_hour is None:
+                        continue
+                    y = y_digits if y_digits is not None else (parse_hu_number_word(y_word) if y_word else None)
+                    if y is None or y > 59:
+                        continue
+                    raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, [x_hour], y)))
+                except (ValueError, TypeError):
                     continue
-                y = y_digits if y_digits is not None else (parse_hu_number_word(y_word) if y_word else None)
-                if y is None or y > 59:
-                    continue
-                raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, [x_hour], y)))
 
             elif kind == "before_minutes":
-                g = m.groups()
-                y_digits = next((int(v) for v in (g[0], g[4]) if v and v.isdigit()), None)
-                y_word   = next((v for v in (g[1], g[5]) if v), None)
-                x_hour   = next((int(v) for v in (g[2], g[3]) if v and v.isdigit()), None)
-                if x_hour is None:
+                try:
+                    g = m.groups()
+                    y_digits = next((int(v) for v in (g[0], g[4]) if v and v.isdigit()), None)
+                    y_word   = next((v for v in (g[1], g[5]) if v), None)
+                    x_hour   = next((int(v) for v in (g[2], g[3]) if v and v.isdigit()), None)
+                    if x_hour is None:
+                        continue
+                    y = y_digits if y_digits is not None else (parse_hu_number_word(y_word) if y_word else None)
+                    if y is None or y > 59:
+                        continue
+                    # (X-1):(60-Y)
+                    from_h = (x_hour - 1) % 24
+                    mm = (60 - y) % 60
+                    raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, [from_h], mm)))
+                except (ValueError, TypeError):
                     continue
-                y = y_digits if y_digits is not None else (parse_hu_number_word(y_word) if y_word else None)
-                if y is None or y > 59:
-                    continue
-                # (X-1):(60-Y)
-                from_h = (x_hour - 1) % 24
-                mm = (60 - y) % 60
-                raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, [from_h], mm)))
 
             elif kind == "oclock_word_needs_daypart":
                 word = m.group(1)

@@ -220,7 +220,15 @@ class MekSourceFetcher:
         if not url:
             return None
         cache_path = self.get_cache_path(url)
-        if cache_path.exists():
+        is_pdf = url.lower().endswith(".pdf") or cache_path.suffix.lower() == ".pdf"
+        txt_cache_path = cache_path.with_suffix(".extracted.txt") if is_pdf else None
+
+        if is_pdf and txt_cache_path and txt_cache_path.exists():
+            try:
+                return txt_cache_path.read_text(encoding="utf-8", errors="replace")
+            except Exception as e:
+                logging.warning(f"Failed to read cached PDF text at {txt_cache_path}: {e}")
+        elif not is_pdf and cache_path.exists():
             try:
                 return cache_path.read_text(encoding="utf-8", errors="replace")
             except Exception as e:
@@ -228,8 +236,40 @@ class MekSourceFetcher:
 
         try:
             time.sleep(self.request_delay_sec)
-            resp = self.session.get(url, timeout=(10, 30))
-            if resp.status_code == 200:
+            resp = self.session.get(url, timeout=(10, 45))
+            if resp.status_code != 200 or not resp.content:
+                logging.warning(f"Failed to fetch {url}, status: {resp.status_code}")
+                return None
+
+            if is_pdf:
+                # Save raw PDF to cache
+                try:
+                    cache_path.parent.mkdir(parents=True, exist_ok=True)
+                    cache_path.write_bytes(resp.content)
+                except Exception as e:
+                    logging.warning(f"Failed to write PDF cache at {cache_path}: {e}")
+
+                # Extract text using pypdf
+                try:
+                    import io
+                    import pypdf
+                    reader = pypdf.PdfReader(io.BytesIO(resp.content))
+                    pages_text = []
+                    for page in reader.pages:
+                        t = page.extract_text()
+                        if t:
+                            pages_text.append(t)
+                    extracted = "\n\n".join(pages_text)
+                    if txt_cache_path and extracted:
+                        try:
+                            txt_cache_path.write_text(extracted, encoding="utf-8", errors="replace")
+                        except Exception:
+                            pass
+                    return extracted
+                except Exception as e:
+                    logging.warning(f"PDF text extraction failed for {url}: {e}")
+                    return None
+            else:
                 resp.encoding = resp.apparent_encoding or "utf-8"
                 content = resp.text
                 try:
@@ -238,9 +278,6 @@ class MekSourceFetcher:
                 except Exception as e:
                     logging.warning(f"Failed to write source cache at {cache_path}: {e}")
                 return content
-            else:
-                logging.warning(f"Failed to fetch {url}, status: {resp.status_code}")
-                return None
         except Exception as e:
             logging.warning(f"Network error fetching {url}: {e}")
             return None

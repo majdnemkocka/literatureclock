@@ -150,6 +150,14 @@ class TestRulesAndTerms(unittest.TestCase):
         self.assertEqual(records[0]["norm_time"], "14:35")
         self.assertEqual(records[0]["minute"], 875)
 
+    def test_extract_from_malformed_text_does_not_crash(self):
+        from extractor import extract
+        # Binary garbage that previously caused ValueError in int() conversions
+        malformed = "8C;\x02^B\x7f}\x1d\xff\xfey\"\x1a\xee[E\x88a\x99GF\x02\xbbTG\x100[G4\x1c\x1e"
+        records = list(extract(malformed, self.rules))
+        # Should complete cleanly without raising ValueError
+        self.assertIsInstance(records, list)
+
     def test_stats_guards(self):
         empty_stats = get_hits_stats(REPO_ROOT / 'non_existent_file.jsonl')
         self.assertEqual(empty_stats['total_hits'], 0)
