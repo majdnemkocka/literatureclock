@@ -24,7 +24,7 @@ class MekMetadataFetcher:
     for MEK (Magyar Elektronikus Könyvtár) catalog items.
     """
 
-    def __init__(self, cache_dir: Optional[Path] = None, request_delay_sec: float = 0.5):
+    def __init__(self, cache_dir: Optional[Path] = None, request_delay_sec: float = 0.3):
         self.cache_dir = Path(cache_dir) if cache_dir else DEFAULT_CACHE_DIR
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.request_delay_sec = request_delay_sec
@@ -32,6 +32,7 @@ class MekMetadataFetcher:
         self.session.headers.update({
             "User-Agent": "LiteratureClockHU/1.0 (+https://github.com/notAnElephant/literatureclock) MetadataFetcher"
         })
+        self._mem_cache: Dict[str, Dict[str, Any]] = {}
 
     @staticmethod
     def extract_mek_id(url_or_id: str) -> Optional[Tuple[str, str]]:
@@ -66,35 +67,47 @@ class MekMetadataFetcher:
 
     def fetch_metadata(self, url_or_id: str, force_refresh: bool = False) -> Dict[str, Any]:
         """
-        Fetches metadata for a MEK item, checking local cache first.
+        Fetches metadata for a MEK item, checking in-memory and disk cache first.
+        Guarantees that 'is_literature' and 'topics' are populated without browser navigation.
         """
         extracted = self.extract_mek_id(url_or_id)
         if not extracted:
             return {
                 "error": f"Invalid MEK ID or URL: {url_or_id}",
-                "url": url_or_id
+                "url": url_or_id,
+                "is_literature": False,
+                "topics": []
             }
 
         prefix, mek_id = extracted
+        cache_key = f"{prefix}/{mek_id}"
+
+        if not force_refresh and cache_key in self._mem_cache:
+            return self._mem_cache[cache_key]
+
         cache_path = self.get_cache_path(prefix, mek_id)
 
         if not force_refresh and cache_path.exists():
             try:
                 with cache_path.open("r", encoding="utf-8") as f:
                     data = json.load(f)
-                return data
+                if "is_literature" in data and "topics" in data and data.get("topics"):
+                    self._mem_cache[cache_key] = data
+                    return data
             except Exception as e:
                 logger.warning(f"Failed to read cached metadata at {cache_path}: {e}")
 
-        # Fetch from network (RDF first, then HTML fallback)
+        # Fetch from network (RDF first, and HTML for rich subject / topic tags)
         data = self._fetch_from_rdf(prefix, mek_id)
-        if not data or not data.get("title"):
+        if not data or not data.get("title") or "topics" not in data or not data.get("topics"):
             html_data = self._fetch_from_html(prefix, mek_id)
             if html_data:
                 if data:
-                    # Merge HTML data into RDF data
                     html_data.update(data)
-                    data = html_data
+                    # Prefer HTML topics and is_literature if RDF had none
+                    if "topics" not in data or not data["topics"]:
+                        data["topics"] = html_data.get("topics", [])
+                        data["is_literature"] = html_data.get("is_literature", False)
                 else:
                     data = html_data
 
@@ -106,10 +119,12 @@ class MekMetadataFetcher:
                 "title": "",
                 "author": "",
                 "urn": "",
+                "topics": [],
                 "is_literature": False
             }
 
-        # Cache the result
+        # Cache in memory and on disk
+        self._mem_cache[cache_key] = data
         try:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             with cache_path.open("w", encoding="utf-8") as f:
@@ -136,6 +151,7 @@ class MekMetadataFetcher:
             ns = {
                 "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
                 "dcterms": "http://purl.org/dc/terms/",
+                "dc": "http://purl.org/dc/elements/1.1/",
                 "bibo": "http://purl.org/ontology/bibo/",
                 "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
                 "ore": "http://www.openarchives.org/ore/terms/",
@@ -177,6 +193,17 @@ class MekMetadataFetcher:
                 if owl_same is not None:
                     viaf_url = owl_same.get(f"{{{ns['rdf']}}}resource", "")
 
+            # Extract subjects/topics from RDF
+            topics = []
+            for sub_elem in root.findall(".//dcterms:subject", ns) + root.findall(".//dc:subject", ns):
+                if sub_elem.text and sub_elem.text.strip():
+                    topics.append(sub_elem.text.strip())
+
+            is_lit = any(
+                ("irodalom" in t.lower()) and ("irodalomtudomány" not in t.lower()) and ("irodalomtudomany" not in t.lower())
+                for t in topics
+            ) if topics else ("szépirodalom" in genre.lower() or "regény" in genre.lower() or "vers" in genre.lower() or "dráma" in genre.lower())
+
             # Aggregated files
             aggregates = []
             for agg in root.findall(".//ore:aggregates", ns):
@@ -195,6 +222,8 @@ class MekMetadataFetcher:
                 "genre": genre,
                 "isbn": isbn,
                 "viaf_url": viaf_url,
+                "topics": topics,
+                "is_literature": is_lit,
                 "aggregates": aggregates,
                 "source": "rdf",
                 "raw_metadata": {
@@ -204,6 +233,7 @@ class MekMetadataFetcher:
                     "genre": genre,
                     "isbn": isbn,
                     "viaf": viaf_url,
+                    "topics": topics,
                     "files": aggregates
                 }
             }
@@ -213,7 +243,7 @@ class MekMetadataFetcher:
 
     def _fetch_from_html(self, prefix: str, mek_id: str) -> Optional[Dict[str, Any]]:
         """
-        Fetches and parses Dublin Core / Open Graph meta tags from the MEK HTML catalog page.
+        Fetches and parses Dublin Core / Open Graph meta tags and topic badges from MEK HTML page.
         """
         item_url = f"https://mek.oszk.hu/{prefix}/{mek_id}/"
         try:
@@ -300,7 +330,7 @@ class MekMetadataFetcher:
         try:
             time.sleep(self.request_delay_sec)
             resp = self.session.get(cover_url, timeout=(10, 30))
-            if resp.status_code == 200 and resp.content and len(resp.content) > 500:
+            if resp.status_code == 200 and resp.content:
                 cover_path.write_bytes(resp.content)
                 return cover_path
         except Exception as e:

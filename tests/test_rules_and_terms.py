@@ -117,7 +117,9 @@ class TestRulesAndTerms(unittest.TestCase):
                 "prefix": "00700",
                 "title": "Teszt Könyv",
                 "author": "Teszt Szerző",
-                "urn": "urn:nbn:hu-teszt"
+                "urn": "urn:nbn:hu-teszt",
+                "topics": ["Szépirodalom"],
+                "is_literature": True
             }
             with cache_file.open("w", encoding="utf-8") as f:
                 json.dump(dummy_data, f)
@@ -179,6 +181,23 @@ class TestRulesAndTerms(unittest.TestCase):
                 mek_time_search.MekSearcher()
         finally:
             mek_time_search.webdriver = original_webdriver
+
+    def test_metadata_fetcher_memory_caching(self):
+        from mek_metadata import MekMetadataFetcher
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fetcher = MekMetadataFetcher(cache_dir=Path(tmpdir))
+            fetcher._mem_cache["00700/00708"] = {
+                "mek_id": "00708",
+                "prefix": "00700",
+                "title": "Memória Könyv",
+                "is_literature": True,
+                "topics": ["Magyar irodalom"]
+            }
+            res = fetcher.fetch_metadata("https://mek.oszk.hu/00700/00708/")
+            self.assertEqual(res["title"], "Memória Könyv")
+            self.assertTrue(res["is_literature"])
+            self.assertEqual(res["topics"], ["Magyar irodalom"])
 
 
 if __name__ == '__main__':

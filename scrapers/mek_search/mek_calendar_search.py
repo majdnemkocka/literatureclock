@@ -222,7 +222,8 @@ class MekSearcher:
             is_lit = meta.get("is_literature", False)
             topics = meta.get("topics", [])
             
-            if not is_lit and not topics:
+            # If is_literature or topics not in meta, ensure it is populated
+            if "is_literature" not in meta or "topics" not in meta:
                 is_lit, topics = self.check_is_literature(res['link'])
                 meta["is_literature"] = is_lit
                 meta["topics"] = topics
@@ -256,19 +257,10 @@ class MekSearcher:
         if not link:
             return False, []
         try:
-            self.driver.get(link)
-            tags = self.driver.find_elements(By.CSS_SELECTOR, ".topic, .subtopic")
-            topics = [t.text for t in tags]
-            lowered_topics = [t.lower() for t in topics]
-            is_lit = any(
-                ("irodalom" in t) and ("irodalomtudomány" not in t) and ("irodalomtudomany" not in t)
-                for t in lowered_topics
-            )
-            return is_lit, topics
-        except WebDriverException:
-            raise
+            meta = self.metadata_fetcher.fetch_metadata(link)
+            return meta.get("is_literature", False), meta.get("topics", [])
         except Exception as e:
-            logging.warning(f"Failed to check link {link}: {e}")
+            logging.warning(f"Failed to check literature status for {link}: {e}")
             return False, []
 
     def close(self):
