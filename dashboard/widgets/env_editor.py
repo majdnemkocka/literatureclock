@@ -70,14 +70,15 @@ class EnvEditorView(Container):
         status_msg.update("Konfiguráció betöltve a .env fájlból.")
         status_msg.remove_class("error", "success")
 
-    def save_config(self) -> None:
+        model_val = self.query_one("#env-input-MODEL_NAME", Input).value.strip()
         updates = {
             "DATABASE_URL": self.query_one("#env-input-DATABASE_URL", Input).value.strip(),
             "AI_PROVIDER": str(self.query_one("#env-select-AI_PROVIDER", Select).value),
             "GEMINI_API_KEY": self.query_one("#env-input-GEMINI_API_KEY", Input).value.strip(),
             "OPENAI_API_KEY": self.query_one("#env-input-OPENAI_API_KEY", Input).value.strip(),
             "BUDGET_USD": self.query_one("#env-input-BUDGET_USD", Input).value.strip(),
-            "MODEL_NAME": self.query_one("#env-input-MODEL_NAME", Input).value.strip(),
+            "MODEL_NAME": model_val,
+            "GEMINI_MODEL": model_val,
         }
         save_env_config(updates)
         status_msg = self.query_one("#env-status-msg", Static)

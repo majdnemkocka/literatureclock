@@ -16,7 +16,7 @@ TIMEOUT_SECONDS = BATCH_SIZE * 30
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 GEMINI_BASE_URL = os.environ.get('GEMINI_BASE_URL', "https://generativelanguage.googleapis.com/v1beta/openai/")
-GEMINI_MODEL_NAME = os.environ.get('GEMINI_MODEL', "gemini-2.5-flash")
+GEMINI_MODEL_NAME = os.environ.get('GEMINI_MODEL') or os.environ.get('MODEL_NAME') or "gemini-2.5-flash"
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
 BUDGET_USD = float(os.environ.get('BUDGET_USD', '2.0'))

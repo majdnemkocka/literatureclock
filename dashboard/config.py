@@ -61,7 +61,7 @@ def check_prerequisites(step: PipelineStep, env: Optional[Dict[str, str]] = None
 
     # Check env requirements
     for env_var in step.required_env:
-        val = active_env.get(env_var) or os.environ.get(env_var)
+        val = active_env.get(env_var)
         if not val or not str(val).strip():
             return False, f"Hiányzó környezeti változó: '{env_var}' (állítsd be a .env fájlban vagy a Beállítások fülön)"
 
