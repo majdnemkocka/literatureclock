@@ -1,0 +1,333 @@
+Screen {
+    background: #0f172a;
+    color: #f8fafc;
+    layout: vertical;
+}
+
+#header-bar {
+    height: 3;
+    dock: top;
+    background: #1e293b;
+    border-bottom: solid #334155;
+    padding: 0 1;
+    align: left middle;
+}
+
+#header-title {
+    text-style: bold;
+    color: #38bdf8;
+    width: 40%;
+}
+
+#header-clock {
+    color: #94a3b8;
+    width: 35%;
+    text-align: center;
+}
+
+#header-status {
+    text-align: right;
+    width: 25%;
+    text-style: bold;
+}
+
+.status-idle {
+    color: #94a3b8;
+}
+
+.status-running {
+    color: #fbbf24;
+    text-style: bold blink;
+}
+
+.status-completed {
+    color: #34d399;
+}
+
+.status-failed {
+    color: #f87171;
+}
+
+.status-stopped {
+    color: #fb923c;
+}
+
+#main-tabs {
+    height: 1fr;
+}
+
+TabPane {
+    padding: 1 1;
+}
+
+/* Wizard View Styles */
+#wizard-container {
+    height: 1fr;
+    layout: vertical;
+}
+
+#wizard-pipeline-selector {
+    height: 3;
+    margin-bottom: 1;
+    align: center middle;
+}
+
+.pipeline-tab-btn {
+    margin: 0 1;
+}
+
+#wizard-body {
+    height: 1fr;
+}
+
+#wizard-step-list-col {
+    width: 35%;
+    height: 1fr;
+    border-right: solid #334155;
+    padding-right: 1;
+}
+
+#wizard-step-detail-col {
+    width: 65%;
+    height: 1fr;
+    padding-left: 1;
+}
+
+.col-header {
+    text-style: bold;
+    color: #38bdf8;
+    margin-bottom: 1;
+    border-bottom: solid #334155;
+    padding-bottom: 0;
+}
+
+.step-detail-title {
+    text-style: bold;
+    color: #f1f5f9;
+    margin-bottom: 1;
+}
+
+.step-detail-desc {
+    color: #cbd5e1;
+    margin-bottom: 1;
+}
+
+.prereq-badge {
+    padding: 0 1;
+    margin-bottom: 1;
+    height: 1;
+}
+
+.prereq-ok {
+    color: #34d399;
+    background: #064e3b;
+}
+
+.prereq-warning {
+    color: #fde047;
+    background: #713f12;
+}
+
+.params-header {
+    text-style: bold;
+    color: #94a3b8;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+.param-row {
+    height: 3;
+    align: left middle;
+    margin-bottom: 1;
+}
+
+.param-label {
+    width: 28;
+    color: #e2e8f0;
+}
+
+.param-row Input {
+    width: 1fr;
+}
+
+.param-row Select {
+    width: 1fr;
+}
+
+#wizard-action-bar {
+    height: 3;
+    margin-top: 1;
+    align: left middle;
+}
+
+#wizard-action-bar Button {
+    margin-right: 1;
+}
+
+/* Script Center Styles */
+#script-center-container {
+    height: 1fr;
+    layout: vertical;
+}
+
+#script-center-body {
+    height: 1fr;
+}
+
+#script-list-col {
+    width: 35%;
+    height: 1fr;
+    border-right: solid #334155;
+    padding-right: 1;
+}
+
+#script-detail-col {
+    width: 65%;
+    height: 1fr;
+    padding-left: 1;
+}
+
+.script-category-badge {
+    color: #a78bfa;
+    margin-bottom: 1;
+}
+
+#script-action-bar {
+    height: 3;
+    margin-top: 1;
+}
+
+/* Stats View Styles */
+#stats-container {
+    height: 1fr;
+    padding: 1;
+}
+
+#stats-cards-grid {
+    grid-size: 2 2;
+    grid-gutter: 1 2;
+    height: 16;
+    margin-bottom: 1;
+}
+
+.stats-card {
+    background: #1e293b;
+    border: solid #334155;
+    padding: 1 2;
+    align: center middle;
+}
+
+.card-title {
+    color: #94a3b8;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+.card-value {
+    color: #38bdf8;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+.card-subtext {
+    color: #64748b;
+}
+
+#stats-actions-bar {
+    height: 3;
+    margin-top: 1;
+    align: center middle;
+}
+
+#stats-actions-bar Button {
+    margin: 0 1;
+}
+
+/* Env Editor Styles */
+#env-editor-container {
+    height: 1fr;
+    padding: 1;
+}
+
+.env-field-row {
+    height: 3;
+    align: left middle;
+    margin-bottom: 1;
+}
+
+.env-label {
+    width: 40;
+    color: #e2e8f0;
+}
+
+.env-field-row Input {
+    width: 1fr;
+}
+
+.env-field-row Select {
+    width: 1fr;
+}
+
+.env-status-msg {
+    height: 2;
+    margin-top: 1;
+    color: #94a3b8;
+}
+
+.env-status-msg.success {
+    color: #34d399;
+}
+
+.env-status-msg.error {
+    color: #f87171;
+}
+
+#env-actions-bar {
+    height: 3;
+    margin-top: 1;
+}
+
+#env-actions-bar Button {
+    margin-right: 1;
+}
+
+/* Console Log Viewer Styles */
+#console-container {
+    height: 14;
+    border-top: solid #334155;
+    background: #020617;
+}
+
+#console-toolbar {
+    height: 3;
+    background: #0f172a;
+    border-bottom: solid #1e293b;
+    padding: 0 1;
+    align: left middle;
+}
+
+#console-title {
+    text-style: bold;
+    color: #38bdf8;
+    width: 25;
+}
+
+#console-timer {
+    color: #fbbf24;
+    width: 15;
+}
+
+#console-toolbar Button {
+    margin-left: 1;
+}
+
+#console-log {
+    background: #020617;
+    color: #e2e8f0;
+    padding: 0 1;
+}
+
+Footer {
+    background: #1e293b;
+    color: #94a3b8;
+}

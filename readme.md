@@ -8,11 +8,26 @@ Alapul szolgáló upstream projekt: [`notAnElephant/literatureclock`](https://gi
 
 ## 🚀 Gyorsindítási Útmutató (Hol kezdjem?)
 
-Ha most találkozol először a projekttel, az alábbi lépésekben tudod a legegyszerűbben elindítani a folyamatot a nyers kereséstől a kész webes felületig.
+### 🎮 0. Interaktív Terminálos Vezérlőpult (Textual Dashboard) – *A legegyszerűbb út*
+
+A teljes projekt egy modern, egységes terminálos grafikus felülettel (TUI) rendelkezik, amely **lépésről lépésre végigvezeti a felhasználót a folyamatokon**, lehetővé teszi a szkriptek paraméterezését, az élő kimenet és időmérés követését, valamint a diagramok és beállítások kezelését:
+
+```bash
+pip install -r requirements.txt
+python dashboard_app.py
+```
+
+**Gyorsbillentyűk a felületen:**
+- `F2`: 🚀 **Vezetett Varázsló** (Óra, Naptár, Offline és Diagnosztika folyamatok)
+- `F3`: ⚙️ **Szkriptközpont** (Összes scraper és eszköz közvetlen futtatása)
+- `F4`: 📊 **Statisztikák & Diagramok** (Lefedettség és HTML diagramok megnyitása)
+- `F5`: 🛠️ **Beállítások** (PostgreSQL és AI API kulcsok kezelése)
+- `Ctrl+X`: ⏹️ **Folyamat leállítása**
+- `Ctrl+Q`: 🚪 **Kilépés**
 
 ---
 
-### ⚡ 1. Ajánlott gyors folyamat (Hibrid Keresés ➔ Adatbázis ➔ AI Értékelés ➔ Web UI)
+### ⚡ 1. Hagyományos parancssori folyamat (Hibrid Keresés ➔ Adatbázis ➔ AI Értékelés ➔ Web UI)
 
 Ez a leggyorsabb módja annak, hogy valós, kerek bekezdésekkel rendelkező idézeteket szerezz és azonnal lásd a webes felületen.
 
