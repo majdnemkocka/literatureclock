@@ -92,8 +92,7 @@ def seed():
                 batch.append((
                     data.get('title', ''),
                     data.get('link', ''),
-                    data.get('snippet', ''),
-                    bool(data.get('is_literature', False)),
+                    str(data.get('is_literature', False)).strip().lower() in ('1', 'true', 'yes'),
                     data.get('valid_dates', []),
                     data.get('topics', []),
                     data.get('urn', ''),
@@ -101,7 +100,7 @@ def seed():
                     data.get('genre', ''),
                     data.get('source_url', ''),
                     data.get('source_type', 'snippet_fallback'),
-                    data.get('is_fallback', False)
+                    str(data.get('is_fallback', False)).strip().lower() in ('1', 'true', 'yes')
                 ))
 
                 if len(batch) >= batch_size:

@@ -52,6 +52,13 @@ export async function GET({ url }) {
             }
         }
         
+        // Check if AI checked entries exist once before loop
+        let hasAiChecked = true;
+        if (dataset !== 'date') {
+            const check = await sql`SELECT 1 FROM entries WHERE ai_checked = true AND is_literature = true LIMIT 1`;
+            hasAiChecked = check.length > 0;
+        }
+
         // Find a valid entry, auto-denying bad ones
         while (!entry && attempts < 20) {
             attempts++;
@@ -63,17 +70,22 @@ export async function GET({ url }) {
                     ORDER BY RANDOM()
                     LIMIT 1
                 `
-                : await sql`
-                    SELECT * FROM entries
-                    WHERE id NOT IN (SELECT entry_id FROM votes)
-                    AND is_literature = true
-                    AND (
-                        ai_checked = true 
-                        OR NOT EXISTS (SELECT 1 FROM entries WHERE ai_checked = true AND is_literature = true)
-                    )
-                    ORDER BY RANDOM()
-                    LIMIT 1
-                `;
+                : (hasAiChecked
+                    ? await sql`
+                        SELECT * FROM entries
+                        WHERE id NOT IN (SELECT entry_id FROM votes)
+                        AND is_literature = true
+                        AND ai_checked = true
+                        ORDER BY RANDOM()
+                        LIMIT 1
+                    `
+                    : await sql`
+                        SELECT * FROM entries
+                        WHERE id NOT IN (SELECT entry_id FROM votes)
+                        AND is_literature = true
+                        ORDER BY RANDOM()
+                        LIMIT 1
+                    `);
             
             const candidate = result[0];
             if (!candidate) break;

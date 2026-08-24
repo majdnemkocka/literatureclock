@@ -4,6 +4,7 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Optional
 
 
 def normalize_snippet_for_hash(snippet: str) -> str:
@@ -65,7 +66,6 @@ def deduplicate(input_file: str = 'scrapers/mek_search/mek_search_results.jsonl'
 
 
 if __name__ == '__main__':
-    from typing import Optional
     parser = argparse.ArgumentParser(description="Deduplicate JSONL results semantically.")
     parser.add_argument('--input', default='scrapers/mek_search/mek_search_results.jsonl',
                         help="Input JSONL file.")

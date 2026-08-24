@@ -9,6 +9,15 @@ def escape_sql(text):
         return "NULL"
     return "'" + str(text).replace("'", "''") + "'"
 
+def escape_sql_array(items):
+    if not items:
+        return "'{}'"
+    escaped_items = []
+    for item in items:
+        clean = str(item).replace('\\', '\\\\').replace('"', '\\"').replace("'", "''")
+        escaped_items.append(f'"{clean}"')
+    return "'{" + ",".join(escaped_items) + "}'"
+
 def main():
     if not os.path.exists(INPUT_FILE):
         print(f"Error: {INPUT_FILE} not found.")
@@ -65,24 +74,21 @@ CREATE INDEX IF NOT EXISTS idx_entries_is_lit ON entries(is_literature);
                     title = data.get('title', '')
                     link = data.get('link', '')
                     snippet = data.get('snippet', '')
-                    is_lit = str(data.get('is_literature', False)).lower()
+                    is_lit = str(str(data.get('is_literature', False)).strip().lower() in ('1', 'true', 'yes')).lower()
                     
-                    valid_times = data.get('valid_times', [])
-                    valid_times_str = '{' + ','.join([f'"{t}"' for t in valid_times]) + '}'
-                    
-                    categories = data.get('topics', [])
-                    categories_str = '{' + ','.join([f'"{escape_sql(c).strip(chr(39))}"' for c in categories]) + '}'
+                    valid_times_str = escape_sql_array(data.get('valid_times', []))
+                    categories_str = escape_sql_array(data.get('topics', []))
 
                     urn = data.get('urn', '')
                     author = data.get('author', '')
                     genre = data.get('genre', '')
                     source_url = data.get('source_url', '')
                     source_type = data.get('source_type', 'snippet_fallback')
-                    is_fallback = str(data.get('is_fallback', False)).lower()
+                    is_fallback = str(str(data.get('is_fallback', False)).strip().lower() in ('1', 'true', 'yes')).lower()
 
                     sql = (
                         f"INSERT INTO entries (title, link, snippet, is_literature, valid_times, categories, urn, author, genre, source_url, source_type, is_fallback) "
-                        f"VALUES ({escape_sql(title)}, {escape_sql(link)}, {escape_sql(snippet)}, {is_lit}, '{valid_times_str}', '{categories_str}', "
+                        f"VALUES ({escape_sql(title)}, {escape_sql(link)}, {escape_sql(snippet)}, {is_lit}, {valid_times_str}, {categories_str}, "
                         f"{escape_sql(urn)}, {escape_sql(author)}, {escape_sql(genre)}, {escape_sql(source_url)}, {escape_sql(source_type)}, {is_fallback});\n"
                     )
                     sql_file.write(sql)
