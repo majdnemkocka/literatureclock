@@ -20,6 +20,7 @@ if str(REPO_ROOT / 'scrapers' / 'mek_search') not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / 'scrapers' / 'mek_search'))
 
 from extractor import raw_html_to_text
+from time_utils import validated_extended_hhmm
 try:
     from mek_time_search import MekSourceFetcher
     source_fetcher = MekSourceFetcher()
@@ -87,7 +88,7 @@ def init_client_and_model():
 client, MODEL_NAME = init_client_and_model()
 
 PROMPT_TEMPLATE = """
-You are a strict data cleaner for a "Literature Clock" project. 
+You are a strict data cleaner for a "Literature Clock" project.
 Your goal is to filter out invalid entries found by a scraper.
 
 The scraper looked for time patterns (e.g. "12:30", "negyed három"), but it found many false positives.
@@ -117,17 +118,37 @@ Input Data (JSON):
 Output Format (JSON):
 Return a list of objects. Each object must have:
 - "id": (integer) The entry ID from the input.
-- "reason": (string) Short explanation (e.g., "Valid quote", "Corrected time from 08:00 to 07:30 for fél nyolckor", "Date format").
-- "rate": (integer) 0-5 rating of quality (i.e., 0 for DENY, 5 for perfect KEEP)
+- "reason": (string) Short explanation (e.g., "Valid quote", "Date format").
+- "rate": (integer) 0-5 rating of quality (0 for DENY, 5 for perfect KEEP)
 - "status": "DENY" or "KEEP"
 - "am_pm": "AM", "PM", or "AMBIGUOUS"
-  * Check the local snippet and the 'wider_context' (surrounding scene/paragraphs) for narrative cues about the time of day:
-    - "AM": morning / daytime events (e.g. "reggel", "délelőtt", "hajnal", "reggeli", "ébredés", "napfelkelte", "iskolába/munkába indulás", "délig").
-    - "PM": afternoon / evening / night events (e.g. "este", "éjjel", "délután", "vacsora", "lefekvés", "sötétedés", "lámpagyújtás", "csillagok", "alváshoz készülődés").
-    - "AMBIGUOUS": only if the wider scene still gives no clue whether it is AM or PM.
-- "corrected_time": (string or null)
-  * If the scraper's matched_time is inaccurate (e.g. matched '08:00' because of partial token 'nyolckor' in 'fél nyolckor' which is actually '07:30' or '19:30', or 'este 9' is 21:00), provide the corrected 24h time in 'HH:MM' format (e.g. '07:30', '19:30', '21:00').
-  * If the matched_time is already correct or status is DENY, return null.
+  * Check the local snippet and the 'wider_context' for narrative cues about the time of day:
+    - "AM": morning / daytime events (e.g. "reggel", "délelőtt", "hajnal", "reggeli", "ébredés").
+    - "PM": afternoon / evening / night events (e.g. "este", "éjjel", "délután", "vacsora").
+    - "AMBIGUOUS": only if the wider scene still gives no clue.
+- "corrected_time": null  (deprecated — superseded by time_focus_str below)
+- "time_min_str": (string or null)
+  * If status=DENY, return null.
+  * The start of the time interval in "HH:MM" format (24h).
+  * For midnight-crossing intervals use extended notation so time_min_str <= time_max_str always holds.
+    Example: "éjfél körül" -> time_min_str="23:45", time_max_str="24:15".
+  * For exact times: time_min_str == time_max_str == time_focus_str.
+- "time_max_str": (string or null)
+  * If status=DENY, return null.
+  * The end of the interval in "HH:MM" (extended notation allowed, e.g. "24:15", "26:00").
+- "time_focus_str": (string or null)
+  * If status=DENY, return null.
+  * The single most probable moment within the interval. NOT necessarily the midpoint.
+  * "nem sokkal fél hat előtt" -> focus is 17:29 (near the end), not 17:23.
+  * "éjféli harangszót követően rögvest" -> focus is 24:01, not 24:05.
+  * For exact times: equal to time_min_str and time_max_str.
+
+Interval width guidelines:
+  * Exact minute ("13:45", "fél hat", "negyed három"): interval width = 0 (all three fields equal).
+  * Fuzzy symmetric ("körül", "tájban", "nagyjából X"): +-10-20 min, focus = centre.
+  * Asymmetric ("rögvest", "nem sokkal X előtt/után"): focus near one end of interval.
+  * Daytime sub-part ("kora délután", "késő este"): +-45-90 min.
+  * Full daypart ("este", "reggel", "éjjel"): 3-5 hour wide interval.
 """
 
 def get_unchecked_entries(cur, limit):
@@ -158,42 +179,48 @@ def get_unchecked_entries(cur, limit):
     return cur.fetchall()
 
 def mark_as_checked(cur, results):
-    if not results: return
-    
-    # Update entries with rating, reason, am_pm, and AI time override if provided
+    if not results:
+        return
+
     for r in results:
-        corrected_time = r.get('corrected_time')
         am_pm_val = r.get('am_pm', 'AMBIGUOUS')
         if am_pm_val not in ('AM', 'PM', 'AMBIGUOUS'):
             am_pm_val = 'AMBIGUOUS'
-            
-        norm_ct = None
-        if corrected_time and isinstance(corrected_time, str):
-            ct_clean = corrected_time.strip()
-            if re.match(r'^\d{1,2}:\d{2}$', ct_clean):
-                h, m = map(int, ct_clean.split(':'))
-                if 0 <= h <= 23 and 0 <= m <= 59:
-                    norm_ct = f"{h:02d}:{m:02d}"
 
-        if norm_ct:
-            cur.execute("""
-                UPDATE entries 
-                SET ai_checked = TRUE, 
-                    ai_rating = %s, 
-                    ai_reason = %s,
-                    ai_am_pm = %s,
-                    valid_times = ARRAY[%s]::TEXT[]
-                WHERE id = %s
-            """, (r.get('rate'), r.get('reason'), am_pm_val, norm_ct, r['id']))
-        else:
-            cur.execute("""
-                UPDATE entries 
-                SET ai_checked = TRUE, 
-                    ai_rating = %s, 
-                    ai_reason = %s,
-                    ai_am_pm = %s
-                WHERE id = %s
-            """, (r.get('rate'), r.get('reason'), am_pm_val, r['id']))
+        min_str, min_m = validated_extended_hhmm(r.get('time_min_str'))
+        max_str, max_m = validated_extended_hhmm(r.get('time_max_str'))
+        foc_str, foc_m = validated_extended_hhmm(r.get('time_focus_str'))
+
+        # Enforce time_min_m <= time_max_m
+        if min_m is not None and max_m is not None and min_m > max_m:
+            min_str = max_str = foc_str = None
+            min_m = max_m = foc_m = None
+
+        # Enforce time_focus_m within [time_min_m, time_max_m]
+        if foc_m is not None and min_m is not None and max_m is not None:
+            if not (min_m <= foc_m <= max_m):
+                foc_str, foc_m = None, None
+
+        cur.execute("""
+            UPDATE entries
+            SET ai_checked     = TRUE,
+                ai_rating      = %s,
+                ai_reason      = %s,
+                ai_am_pm       = %s,
+                time_min_str   = %s,
+                time_min_m     = %s,
+                time_max_str   = %s,
+                time_max_m     = %s,
+                time_focus_str = %s,
+                time_focus_m   = %s
+            WHERE id = %s
+        """, (
+            r.get('rate'), r.get('reason'), am_pm_val,
+            min_str, min_m,
+            max_str, max_m,
+            foc_str, foc_m,
+            r['id']
+        ))
 
 def insert_deny_votes(cur, denials):
     if not denials: return
