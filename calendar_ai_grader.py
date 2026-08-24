@@ -8,6 +8,8 @@ from psycopg2.extras import execute_values
 from dotenv import load_dotenv
 from openai import OpenAI, APITimeoutError, APIConnectionError
 
+from date_utils import validated_mmdd, parse_day_of_week
+
 load_dotenv()
 
 BATCH_SIZE = int(os.environ.get('CALENDAR_BATCH_SIZE', '8'))
@@ -39,28 +41,37 @@ total_output_tokens = 0
 total_cost_usd = 0.0
 
 PROMPT_TEMPLATE = """
-You are a strict data cleaner for a "Literature Calendar" project.
-Your goal is to filter out invalid date entries found by a scraper.
+You are a strict data cleaner and date evaluator for a Hungarian "Literature Calendar" project.
+Your goal is to evaluate Hungarian literary snippets for concrete calendar date and/or day-of-week references.
 
-The snippet is Hungarian and may contain `<span class="marked">...</span>` around matched date tokens.
+The snippet may contain `<span class="marked">...</span>` around matched date/time tokens.
 
-DENY criteria:
-1. Not a date reference (just numbers, IDs, pagination, filenames, or clocks without calendar-date meaning).
-2. Meta-text only (TOC, bibliography, index, OCR file headers, dumps of timestamps).
-3. Broken/gibberish snippet where date meaning is unreliable.
+For each entry, determine:
+- "status": "KEEP" (valid literary date/weekday mention) or "DENY" (OCR garbage, bibliography, table of contents, pure chapter number, no calendar meaning).
+- "rate": integer 0 to 5 (quality rating).
+- "reason": short string in Hungarian or English explaining the decision.
+- "date_min_str": "MM-DD" or null (e.g. "03-15" for March 15; "03-01" for March start; "12-01" for winter).
+- "date_max_str": "MM-DD" or null (e.g. "03-15" for exact; "03-10" for March start; "02-28" for winter).
+- "date_focus_str": "MM-DD" or null (most probable focus point within interval, e.g. "03-05").
+- "day_of_week": "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY", "WEEKEND", or null if not weekday-specific.
 
-KEEP criteria:
-1. Literary sentence/diary/event context with a concrete calendar date reference.
-2. Marker context clearly supports a date mention.
+Guidelines for Hungarian Dates & Intervals:
+1. Exact dates: "március 15." -> date_min_str="03-15", date_max_str="03-15", date_focus_str="03-15", day_of_week=null.
+2. Month parts: "március elején" -> "03-01" to "03-10", focus="03-05".
+   "március derekán" / "közepén" -> "03-10" to "03-20", focus="03-15".
+   "március végén" -> "03-20" to "03-31", focus="03-28".
+3. Seasons: "tavasszal" -> "03-01" to "05-31", focus="04-15".
+   "nyáron" -> "06-01" to "08-31", focus="07-15".
+   "ősszel" -> "09-01" to "11-30", focus="10-15".
+   "télen" -> "12-01" to "02-28", focus="01-15".
+4. Weekdays: "hétfőn" -> day_of_week="MONDAY".
+5. Hybrid: "egy forró augusztusi hétfőn" -> date_min="08-01", date_max="08-31", date_focus="08-15", day_of_week="MONDAY".
 
 Input Data (JSON):
 {data}
 
 Output Format (JSON list):
-- "id": integer
-- "reason": short string
-- "rate": integer 0-5
-- "status": "DENY" or "KEEP"
+Respond ONLY with a JSON array of objects containing the fields: id, status, rate, reason, date_min_str, date_max_str, date_focus_str, day_of_week.
 """
 
 
@@ -111,7 +122,7 @@ def reset_regrade_scope(cur):
 def fetch_unchecked(cur, limit):
     if RE_GRADE_AI_ONLY:
         cur.execute("""
-            SELECT e.id, e.title, e.snippet, e.valid_dates
+            SELECT e.id, e.title, e.snippet, e.date_min_str, e.date_max_str, e.day_of_week
             FROM calendar_entries e
             WHERE e.ai_checked IS FALSE
               AND e.is_literature IS TRUE
@@ -126,7 +137,7 @@ def fetch_unchecked(cur, limit):
         """, (limit,))
     else:
         cur.execute("""
-            SELECT id, title, snippet, valid_dates
+            SELECT id, title, snippet, date_min_str, date_max_str, day_of_week
             FROM calendar_entries
             WHERE ai_checked IS FALSE
               AND is_literature IS TRUE
@@ -177,13 +188,59 @@ def insert_denies(cur, deny_rows):
 
 def mark_checked(cur, rows):
     for row in rows:
+        d_min_raw = row.get("date_min_str")
+        d_max_raw = row.get("date_max_str") or d_min_raw
+        d_foc_raw = row.get("date_focus_str") or d_min_raw
+        dow_raw = row.get("day_of_week")
+
+        d_min_str, d_min_d = validated_mmdd(d_min_raw)
+        d_max_str, d_max_d = validated_mmdd(d_max_raw)
+        d_foc_str, d_foc_d = validated_mmdd(d_foc_raw)
+
+        # Handle year crossing (e.g. 12-01=335 to 02-28=59 -> 59 + 366 = 425)
+        if d_min_d is not None and d_max_d is not None:
+            if d_min_d > d_max_d:
+                d_max_d += 366
+            if d_foc_d is not None and d_foc_d < d_min_d and d_min_d > 300:
+                d_foc_d += 366
+
+            # Validate bounds
+            if d_min_d > d_max_d:
+                d_min_str, d_min_d = None, None
+                d_max_str, d_max_d = None, None
+                d_foc_str, d_foc_d = None, None
+            elif d_foc_d is not None and not (d_min_d <= d_foc_d <= d_max_d):
+                d_foc_str, d_foc_d = None, None
+
+        dow_str, dow_num = parse_day_of_week(dow_raw)
+
         cur.execute("""
             UPDATE calendar_entries
             SET ai_checked = TRUE,
                 ai_rating = %s,
-                ai_reason = %s
+                ai_reason = %s,
+                date_min_str = %s,
+                date_max_str = %s,
+                date_focus_str = %s,
+                date_min_d = %s,
+                date_max_d = %s,
+                date_focus_d = %s,
+                day_of_week = %s,
+                day_of_week_num = %s
             WHERE id = %s
-        """, (row.get('rate'), row.get('reason'), row['id']))
+        """, (
+            row.get('rate'),
+            row.get('reason'),
+            d_min_str,
+            d_max_str,
+            d_foc_str,
+            d_min_d,
+            d_max_d,
+            d_foc_d,
+            dow_str,
+            dow_num,
+            row['id']
+        ))
 
 
 def call_model(batch_entries):
