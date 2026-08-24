@@ -12,9 +12,9 @@ Ha most találkozol először a projekttel, az alábbi lépésekben tudod a lege
 
 ---
 
-### ⚡ 1. Ajánlott gyors folyamat (Keresés ➔ Adatbázis ➔ AI Értékelés ➔ Web UI)
+### ⚡ 1. Ajánlott gyors folyamat (Hibrid Keresés ➔ Adatbázis ➔ AI Értékelés ➔ Web UI)
 
-Ez a leggyorsabb módja annak, hogy valós idézeteket szerezz és azonnal lásd a webes felületen.
+Ez a leggyorsabb módja annak, hogy valós, kerek bekezdésekkel rendelkező idézeteket szerezz és azonnal lásd a webes felületen.
 
 #### 1. lépés: Függőségek telepítése
 ```bash
@@ -23,13 +23,13 @@ cd grading-app && npm install && cd ..
 ```
 - ⏱️ **Időigény:** ~1–2 perc
 
-#### 2. lépés: Idézetek keresése a MEK teljes szöveges keresőjében
+#### 2. lépés: Hibrid mélykeresés a MEK-en (Teljes bekezdések + LOD metaadatok)
 ```bash
 python scrapers/mek_search/mek_time_search.py --limit 500 --output scrapers/mek_search/mek_search_results.jsonl
 ```
-- 🔍 **Mit csinál?** A `rules.json5` időpont-kifejezéseit automatikusan beküldi a MEK keresőjébe, és lementi a találati szövegrészleteket.
-- ⏱️ **Időigény:** ~5–15 perc (a beállított limit méretétől függően).
-- 📄 **Várható kimenet:** `scrapers/mek_search/mek_search_results.jsonl` (több száz/ezer nyers idézet és metaadat).
+- 🔍 **Mit csinál?** A `rules.json5` kifejezéseit beküldi a MEK keresőjébe, automatikusan letölti és gyorsítótárazza a *"Találat helye"* fejezeteket, és az `extractor.py` segítségével kerek bekezdéseket és többes találatokat (multi-hit) nyer ki, csatolva a szabványos MEK Linked Open Data (LOD) metaadatokat (URN, szerző, cím, műfaj).
+- ⏱️ **Időigény:** ~5–15 perc (a limit méretétől függően).
+- 📄 **Várható kimenet:** `scrapers/mek_search/mek_search_results.jsonl` (több ezer gazdag metaadatú idézet).
 
 #### 3. lépés: Adatbázis inicializálása és feltöltése (Seeding)
 ```bash
@@ -84,7 +84,35 @@ Ha a nap percei helyett az év naptári napjaihoz (hónap + nap) szeretnél idé
 
 ---
 
-## 📂 Fájlstruktúra és Fájlleírások
+## 🌟 Kiemelt Funkciók
+
+### 🎯 Hibrid Mélykeresés (Targeted Deep Extraction)
+A kereső nem csupán a találati oldal 100-200 karakteres, sokszor csonka snippetjét menti le:
+1. **Pontos fejezetletöltés:** A találati blokkban lévő *"Találat helye"* linkről letölti a konkrét HTML fejezetet/dokumentumot.
+2. **Szerverkímélő gyorsítótárazás:** A letöltött oldalakat és metaadatokat a MEK relatív útvonala szerint lementi (`scrapers/mek_search/cache/`), így minden fejezetet és metaadatot **kizárólag egyszer tölt le**.
+3. **Multi-hit extrakció:** Az `extractor.py` a teljes letöltött fejezetet átfésüli, így egyetlen letöltött fejezetből **az összes benne szereplő időpont kinyerhető** kerek, teljes bekezdésekkel és pontos 12h/24h napszak-feloldással (pl. József Attila: *Curriculum Vitae* szövegéből egyszerre születik meg a `07:30` és a `21:00` bejegyzés).
+4. **Biztonsági Fallback:** Ha a forrásfejezet nem érhető el vagy nem parse-olható, a rendszer automatikusan megőrzi az eredeti keresési snippetet `is_fallback: true` jelöléssel.
+
+### 🏛️ MEK LOD (Linked Open Data) & Metaadat-integráció
+A `scrapers/mek_metadata.py` modul szabványos RDF/XML és Dublin Core feldolgozással az alábbi mezőket nyeri ki és csatolja minden bejegyzéshez:
+- `urn`: Szabványos nemzeti könyvtári azonosító (pl. `urn:nbn:hu-2707`)
+- `title` & `author`: Egységesített cím és szerző (magyar és nemzetközi név, VIAF link)
+- `genre`: Pontos műfaj (pl. `poems`, `novel`, `plays`, `short stories`)
+- `source_url`: A fejezet közvetlen forráslinkje
+- `cover_url`: Borítókép közvetlen elérhetősége (`borito.jpg`)
+- `raw_metadata`: A teljes nyers könyvészeti szótár (ISBN, fájlok, gyűjtemények)
+
+### ⚙️ Kereső CLI Kapcsolók (`mek_time_search.py`)
+- `--limit N`: Maximálisan keresendő kifejezések száma (alapértelmezett: 5, teljes futtatáshoz: `<=0`).
+- `--term "kifejezés"`: Egyetlen kifejezés célzott keresése és azonnali tesztelése.
+- `--deep-extract` / `--no-deep-extract`: Fejezetszintű mélykeresés be/kikapcsolása (alapértelmezetten bekapcsolva).
+- `--download-covers`: Borítóképek letöltése a `covers/` mappába.
+- `--output file.jsonl`: Kimeneti fájl megadása.
+- `--visible`: Böngészőablak megjelenítése (nem headless mód).
+
+---
+
+## 📂 Fájlstruktúra és Részletes Leírások
 
 ### ⚙️ 1. Szabályok és Konfigurációk
 - **`rules.json5`**: A magyar időpont-kifejezések regex és szemantikai szabályrendszere (pl. `14:30`, `fél három`, `negyed 8-kor`, `10 perccel öt után`), valamint a szám-szöveg szótárak (ones, tens, word2hour).
@@ -105,7 +133,7 @@ Ha a nap percei helyett az év naptári napjaihoz (hónap + nap) szeretnél idé
 ---
 
 ### 🔍 3. Időpont- és Szövegkinyerés
-- **`extractor.py`**: A letöltött HTML/TXT szövegekből kinyeri a tiszta szöveget, normalizálja az ékezeteket és karakterkódolást, majd a `rules.json5` szabályait illesztve JSONL formátumban kimenti a talált időpontokat és a környező szövegkörnyezetet (context snippet). 12/24 órás egyértelműsítést is végez ("reggel", "este" stb. alapján).
+- **`extractor.py`**: A letöltött HTML/TXT szövegekből kinyeri a tiszta szöveget, normalizálja az ékezeteket és karakterkódolást, majd a `rules.json5` szabályait illesztve JSONL formátumban kimenti a talált időpontokat és a környező szövegkörnyezetet (context snippet). Támogatja a közvetlen memóriabeli HTML extrakciót (`extract_from_html`) és 12/24 órás napszak-feloldást végez ("reggel", "este" stb. alapján).
 
 ---
 
@@ -135,7 +163,7 @@ Ha a nap percei helyett az év naptári napjaihoz (hónap + nap) szeretnél idé
 ### 🌐 7. Alkalmazások és Almodulok
 - **`grading-app/`**: SvelteKit + Tailwind CSS webalkalmazás. Lehetővé teszi az idézetek kézi átnézését, pontozását, könyvenkénti kezelését, valamint a Naptár / Óra módok közötti váltást.
 - **`literature-calendar/`**: A "Literature Calendar" alprojekt dokumentációja és futtatási útmutatója.
-- **`tests/`**: Egységtesztek (`test_rules_and_terms.py`), amelyek ellenőrzik a relatív időszabályokat (fél/negyed), a teljes 24 órás lefedettséget és a hibakezelést.
+- **`tests/`**: Egységtesztek (`test_rules_and_terms.py`), amelyek ellenőrzik a relatív időszabályokat (fél/negyed), a LOD metaadat-kinyerést, a lemezes gyorsítótárazást, a teljes 24 órás lefedettséget és a hibakezelést.
 
 ---
 
