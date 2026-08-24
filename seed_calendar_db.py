@@ -4,6 +4,8 @@ import psycopg2
 from psycopg2.extras import execute_values
 from dotenv import load_dotenv
 
+from date_utils import validated_mmdd, parse_day_of_week
+
 load_dotenv()
 
 INPUT_FILE = os.environ.get('CALENDAR_INPUT_FILE', 'scrapers/mek_search/mek_calendar_search_results.jsonl')
@@ -18,7 +20,6 @@ def create_calendar_tables(cur):
             link TEXT,
             snippet TEXT,
             is_literature BOOLEAN,
-            valid_dates TEXT[],
             categories TEXT[],
             urn TEXT,
             author TEXT,
@@ -28,11 +29,17 @@ def create_calendar_tables(cur):
             is_fallback BOOLEAN DEFAULT FALSE,
             ai_rating INTEGER,
             ai_reason TEXT,
-            ai_checked BOOLEAN DEFAULT FALSE
+            ai_checked BOOLEAN DEFAULT FALSE,
+            date_min_str    VARCHAR(5),
+            date_max_str    VARCHAR(5),
+            date_focus_str  VARCHAR(5),
+            date_min_d      SMALLINT,
+            date_max_d      SMALLINT,
+            date_focus_d    SMALLINT,
+            day_of_week     VARCHAR(15),
+            day_of_week_num SMALLINT
         );
-    """)
 
-    cur.execute("""
         CREATE TABLE IF NOT EXISTS calendar_votes (
             id SERIAL PRIMARY KEY,
             entry_id INTEGER REFERENCES calendar_entries(id) ON DELETE CASCADE,
@@ -41,17 +48,22 @@ def create_calendar_tables(cur):
             corrected_date TEXT,
             created_at TIMESTAMP DEFAULT NOW()
         );
-    """)
 
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_calendar_entries_ai_checked ON calendar_entries(ai_checked)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_calendar_entries_is_lit ON calendar_entries(is_literature)")
+        CREATE INDEX IF NOT EXISTS idx_calendar_entries_ai_checked ON calendar_entries(ai_checked);
+        CREATE INDEX IF NOT EXISTS idx_calendar_entries_is_lit ON calendar_entries(is_literature);
+        CREATE INDEX IF NOT EXISTS idx_cal_date_min_d ON calendar_entries(date_min_d);
+        CREATE INDEX IF NOT EXISTS idx_cal_date_max_d ON calendar_entries(date_max_d);
+        CREATE INDEX IF NOT EXISTS idx_cal_dow ON calendar_entries(day_of_week_num);
+    """)
 
 
 def insert_batch(cur, batch):
     query = """
         INSERT INTO calendar_entries (
-            title, link, snippet, is_literature, valid_dates, categories,
-            urn, author, genre, source_url, source_type, is_fallback
+            title, link, snippet, is_literature, categories,
+            urn, author, genre, source_url, source_type, is_fallback,
+            date_min_str, date_max_str, date_focus_str, date_min_d, date_max_d, date_focus_d,
+            day_of_week, day_of_week_num
         )
         VALUES %s
     """
@@ -86,21 +98,47 @@ def seed():
                 data = json.loads(line)
                 if data.get('count') == 0:
                     continue
-                if not data.get('title') or not data.get('snippet'):
+                title = data.get('title', '')
+                snippet = data.get('snippet', '')
+                if not title or not snippet:
                     continue
 
+                is_lit = str(data.get('is_literature', False)).strip().lower() in ('1', 'true', 'yes')
+                categories = data.get('topics', [])
+                urn = data.get('urn', '')
+                author = data.get('author', '')
+                genre = data.get('genre', '')
+                source_url = data.get('source_url', '')
+                source_type = data.get('source_type', 'snippet_fallback')
+                is_fallback = str(data.get('is_fallback', False)).strip().lower() in ('1', 'true', 'yes')
+
+                # Date intervals & weekdays
+                d_min_str, d_min_d = validated_mmdd(data.get('date_min_str') or (data.get('valid_dates', [None])[0] if data.get('valid_dates') else None))
+                d_max_str, d_max_d = validated_mmdd(data.get('date_max_str') or d_min_str)
+                d_foc_str, d_foc_d = validated_mmdd(data.get('date_focus_str') or d_min_str)
+
+                dow_str, dow_num = parse_day_of_week(data.get('day_of_week'))
+
                 batch.append((
-                    data.get('title', ''),
+                    title,
                     data.get('link', ''),
-                    str(data.get('is_literature', False)).strip().lower() in ('1', 'true', 'yes'),
-                    data.get('valid_dates', []),
-                    data.get('topics', []),
-                    data.get('urn', ''),
-                    data.get('author', ''),
-                    data.get('genre', ''),
-                    data.get('source_url', ''),
-                    data.get('source_type', 'snippet_fallback'),
-                    str(data.get('is_fallback', False)).strip().lower() in ('1', 'true', 'yes')
+                    snippet,
+                    is_lit,
+                    categories,
+                    urn,
+                    author,
+                    genre,
+                    source_url,
+                    source_type,
+                    is_fallback,
+                    d_min_str,
+                    d_max_str,
+                    d_foc_str,
+                    d_min_d,
+                    d_max_d,
+                    d_foc_d,
+                    dow_str,
+                    dow_num
                 ))
 
                 if len(batch) >= batch_size:
