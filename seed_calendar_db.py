@@ -2,8 +2,11 @@ import json
 import os
 import psycopg2
 from psycopg2.extras import execute_values
+from dotenv import load_dotenv
 
-INPUT_FILE = 'scrapers/mek_search/mek_calendar_search_results.jsonl'
+load_dotenv()
+
+INPUT_FILE = os.environ.get('CALENDAR_INPUT_FILE', 'scrapers/mek_search/mek_calendar_search_results.jsonl')
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 
@@ -17,6 +20,12 @@ def create_calendar_tables(cur):
             is_literature BOOLEAN,
             valid_dates TEXT[],
             categories TEXT[],
+            urn TEXT,
+            author TEXT,
+            genre TEXT,
+            source_url TEXT,
+            source_type TEXT,
+            is_fallback BOOLEAN DEFAULT FALSE,
             ai_rating INTEGER,
             ai_reason TEXT,
             ai_checked BOOLEAN DEFAULT FALSE
@@ -26,7 +35,7 @@ def create_calendar_tables(cur):
     cur.execute("""
         CREATE TABLE IF NOT EXISTS calendar_votes (
             id SERIAL PRIMARY KEY,
-            entry_id INTEGER REFERENCES calendar_entries(id),
+            entry_id INTEGER REFERENCES calendar_entries(id) ON DELETE CASCADE,
             rating INTEGER CHECK (rating >= 0 AND rating <= 5),
             date_class VARCHAR(20),
             corrected_date TEXT,
@@ -35,11 +44,15 @@ def create_calendar_tables(cur):
     """)
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_calendar_entries_ai_checked ON calendar_entries(ai_checked)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_calendar_entries_is_lit ON calendar_entries(is_literature)")
 
 
 def insert_batch(cur, batch):
     query = """
-        INSERT INTO calendar_entries (title, link, snippet, is_literature, valid_dates, categories)
+        INSERT INTO calendar_entries (
+            title, link, snippet, is_literature, valid_dates, categories,
+            urn, author, genre, source_url, source_type, is_fallback
+        )
         VALUES %s
     """
     execute_values(cur, query, batch)
@@ -54,7 +67,7 @@ def seed():
         print(f"Error: {INPUT_FILE} not found.")
         return
 
-    print("Connecting to Neon...")
+    print(f"Connecting to database using {INPUT_FILE}...")
     conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
 
@@ -82,7 +95,13 @@ def seed():
                     data.get('snippet', ''),
                     bool(data.get('is_literature', False)),
                     data.get('valid_dates', []),
-                    data.get('topics', [])
+                    data.get('topics', []),
+                    data.get('urn', ''),
+                    data.get('author', ''),
+                    data.get('genre', ''),
+                    data.get('source_url', ''),
+                    data.get('source_type', 'snippet_fallback'),
+                    data.get('is_fallback', False)
                 ))
 
                 if len(batch) >= batch_size:
@@ -101,7 +120,7 @@ def seed():
     conn.commit()
     cur.close()
     conn.close()
-    print(f"Calendar seeding completed. Total inserted: {inserted}")
+    print(f"Calendar seeding completed successfully! Total inserted: {inserted}")
 
 
 if __name__ == '__main__':

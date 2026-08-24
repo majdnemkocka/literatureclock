@@ -21,11 +21,11 @@ RE_GRADE_AI_ONLY = os.environ.get('RE_GRADE_AI_ONLY', 'true').strip().lower() in
 RESET_AI_CHECKED_FOR_REGRADE = os.environ.get('RESET_AI_CHECKED_FOR_REGRADE', 'true').strip().lower() in ('1', 'true', 'yes')
 
 # AI Provider Configuration
-AI_PROVIDER = os.environ.get('AI_PROVIDER', "lmstudio").strip().lower()
+AI_PROVIDER = os.environ.get('AI_PROVIDER', "gemini").strip().lower()
 LM_STUDIO_BASE_URL = os.environ.get('LM_STUDIO_BASE_URL', "http://localhost:1234/v1")
 DEFAULT_LMSTUDIO_MODEL_NAME = os.environ.get('MODEL_NAME', "local-model")
 GEMINI_BASE_URL = os.environ.get('GEMINI_BASE_URL', "https://generativelanguage.googleapis.com/v1beta/openai/")
-GEMINI_MODEL_NAME = os.environ.get('GEMINI_MODEL', "gemini-2.5-flash")
+GEMINI_MODEL_NAME = os.environ.get('GEMINI_MODEL', "gemini-2.0-flash")
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 GEMINI_FLASH_INPUT_USD_PER_M = float(os.environ.get('GEMINI_FLASH_INPUT_USD_PER_M', '0.30'))
 GEMINI_FLASH_OUTPUT_USD_PER_M = float(os.environ.get('GEMINI_FLASH_OUTPUT_USD_PER_M', '2.50'))
@@ -330,6 +330,13 @@ def main():
     conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = False # We'll commit after each batch
     cur = conn.cursor()
+
+    cur.execute("""
+        ALTER TABLE entries ADD COLUMN IF NOT EXISTS ai_checked BOOLEAN DEFAULT FALSE;
+        ALTER TABLE entries ADD COLUMN IF NOT EXISTS ai_rating INTEGER;
+        ALTER TABLE entries ADD COLUMN IF NOT EXISTS ai_reason TEXT;
+    """)
+    conn.commit()
 
     if RE_GRADE_AI_ONLY and RESET_AI_CHECKED_FOR_REGRADE:
         cur.execute("""

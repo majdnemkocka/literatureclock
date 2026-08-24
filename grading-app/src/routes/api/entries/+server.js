@@ -67,7 +67,10 @@ export async function GET({ url }) {
                     SELECT * FROM entries
                     WHERE id NOT IN (SELECT entry_id FROM votes)
                     AND is_literature = true
-                    AND ai_checked = true
+                    AND (
+                        ai_checked = true 
+                        OR NOT EXISTS (SELECT 1 FROM entries WHERE ai_checked = true AND is_literature = true)
+                    )
                     ORDER BY RANDOM()
                     LIMIT 1
                 `;
