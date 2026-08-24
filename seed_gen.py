@@ -9,6 +9,15 @@ def escape_sql(text):
         return "NULL"
     return "'" + str(text).replace("'", "''") + "'"
 
+def to_m(s):
+    if not s or ':' not in s:
+        return None
+    try:
+        parts = s.split(':')
+        return int(parts[0]) * 60 + int(parts[1])
+    except Exception:
+        return None
+
 def escape_sql_array(items):
     if not items:
         return "'{}'"
@@ -86,15 +95,6 @@ CREATE INDEX IF NOT EXISTS idx_entries_time_max_m ON entries(time_max_m);
                     time_min_str = data.get('time_min_str') or data.get('norm_time')
                     time_max_str = data.get('time_max_str') or time_min_str
                     time_focus_str = data.get('time_focus_str') or time_min_str
-
-                    def to_m(s):
-                        if not s or ':' not in s:
-                            return None
-                        try:
-                            parts = s.split(':')
-                            return int(parts[0]) * 60 + int(parts[1])
-                        except Exception:
-                            return None
 
                     time_min_m = data.get('time_min_m') if data.get('time_min_m') is not None else to_m(time_min_str)
                     time_max_m = data.get('time_max_m') if data.get('time_max_m') is not None else to_m(time_max_str)

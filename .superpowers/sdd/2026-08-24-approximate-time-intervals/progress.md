@@ -25,4 +25,6 @@ Task 1: complete (commits 0304a23..17a939d, review clean)
 Task 2: complete (commits 17a939d..36184b8, review clean)
 Task 3: complete (commits 36184b8..1b86b0f, review clean)
 Task 4: complete (commits 1b86b0f..4970030, review clean)
+Task 5: complete (commits 4970030..5934e94, review clean)
+Task 5: minor (deferred): seed_gen.py: to_m(s) helper defined inside loop
 

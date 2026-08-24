@@ -57,6 +57,12 @@ async function seed() {
   let batch = [];
   const BATCH_SIZE = 100; // Smaller batches for HTTP driver stability
 
+  const parseM = (s) => {
+    if (!s || !s.includes(':')) return null;
+    const [h, m] = s.split(':').map(Number);
+    return isNaN(h) || isNaN(m) ? null : h * 60 + m;
+  };
+
   for await (const line of rl) {
     if (!line.trim()) continue;
     try {
@@ -64,11 +70,6 @@ async function seed() {
       const timeMinStr = data.time_min_str || data.norm_time || null;
       const timeMaxStr = data.time_max_str || timeMinStr;
       const timeFocusStr = data.time_focus_str || timeMinStr;
-      const parseM = (s) => {
-        if (!s || !s.includes(':')) return null;
-        const [h, m] = s.split(':').map(Number);
-        return isNaN(h) || isNaN(m) ? null : h * 60 + m;
-      };
       const timeMinM = data.time_min_m !== undefined ? data.time_min_m : parseM(timeMinStr);
       const timeMaxM = data.time_max_m !== undefined ? data.time_max_m : parseM(timeMaxStr);
       const timeFocusM = data.time_focus_m !== undefined ? data.time_focus_m : parseM(timeFocusStr);
