@@ -177,5 +177,103 @@
     "50s_prefix": [
       "ötven"
     ]
-  }
+  },
+  "daypart_rules": [
+    {
+      "id": "daypart_hajnal",
+      "pattern": "\\b(?:kora\\s+)?(?:hajnal(?:ban|i)?|pirkadat(?:kor)?|napkelte(?:kor)?|pitymallat(?:kor)?)\\b",
+      "time_min": "04:00",
+      "time_max": "07:00",
+      "time_focus": "05:30",
+      "description": "Hajnal / pirkadat"
+    },
+    {
+      "id": "daypart_reggel",
+      "pattern": "\\b(?:kora\\s+)?reggel(?:i|ente|kor)?\\b",
+      "time_min": "06:00",
+      "time_max": "09:30",
+      "time_focus": "07:30",
+      "description": "Reggel"
+    },
+    {
+      "id": "daypart_delelott",
+      "pattern": "\\bdélelőtt(?:önként|i)?\\b",
+      "time_min": "09:00",
+      "time_max": "12:00",
+      "time_focus": "10:30",
+      "description": "Délelőtt"
+    },
+    {
+      "id": "daypart_del",
+      "pattern": "\\b(?:délben|dél\\s+tájban|dél\\s+körül|déli\\s+harangszó(?:kor)?)\\b",
+      "time_min": "11:30",
+      "time_max": "12:30",
+      "time_focus": "12:00",
+      "description": "Délben / dél körül"
+    },
+    {
+      "id": "daypart_kora_delutan",
+      "pattern": "\\bkora\\s+délután(?:i)?\\b",
+      "time_min": "12:30",
+      "time_max": "14:30",
+      "time_focus": "13:30",
+      "description": "Kora délután"
+    },
+    {
+      "id": "daypart_delutan",
+      "pattern": "\\bdélután(?:onként|i)?\\b",
+      "time_min": "13:00",
+      "time_max": "18:00",
+      "time_focus": "15:30",
+      "description": "Délután"
+    },
+    {
+      "id": "daypart_keso_delutan_alkonyat",
+      "pattern": "\\b(?:késő\\s+délután(?:i)?|alkonyat(?:kor)?|szürkület(?:kor)?|napnyugta(?:kor)?|naplemente(?:kor)?)\\b",
+      "time_min": "16:30",
+      "time_max": "19:00",
+      "time_focus": "17:45",
+      "description": "Késő délután / alkonyat / szürkület"
+    },
+    {
+      "id": "daypart_kora_este",
+      "pattern": "\\bkora\\s+este(?:i)?\\b",
+      "time_min": "18:00",
+      "time_max": "20:00",
+      "time_focus": "19:00",
+      "description": "Kora este"
+    },
+    {
+      "id": "daypart_este",
+      "pattern": "\\b(?:este(?:i|nként)?|esteled(?:ik|ett|vén))\\b",
+      "time_min": "18:30",
+      "time_max": "22:00",
+      "time_focus": "20:00",
+      "description": "Este"
+    },
+    {
+      "id": "daypart_keso_este",
+      "pattern": "\\bkéső\\s+este(?:i)?\\b",
+      "time_min": "21:30",
+      "time_max": "23:30",
+      "time_focus": "22:30",
+      "description": "Késő este"
+    },
+    {
+      "id": "daypart_ejfel_korul",
+      "pattern": "\\béjfél\\s+(?:tájban|körül|után|előtt)\\b",
+      "time_min": "23:30",
+      "time_max": "24:30",
+      "time_focus": "24:00",
+      "description": "Éjfél tájban / körül"
+    },
+    {
+      "id": "daypart_ejjel",
+      "pattern": "\\b(?:éjjel(?:i|ente)?|éjszaka(?:i)?)\\b",
+      "time_min": "22:00",
+      "time_max": "26:00",
+      "time_focus": "24:00",
+      "description": "Éjjel / éjszaka"
+    }
+  ]
 }

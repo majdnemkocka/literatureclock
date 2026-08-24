@@ -175,6 +175,37 @@ class TimeTermGenerator:
         return list(terms)
 
 
+class DaypartTermGenerator:
+    """
+    Generates canonical search terms and queries for broad and nuanced Hungarian dayparts.
+    """
+    DAYPART_CATEGORIES = [
+        ("hajnal", ["hajnal*", "pirkadat*", "napkelte*", "pitymallat*"]),
+        ("reggel", ["reggel*", "kora reggel*"]),
+        ("delelott", ["délelőtt*"]),
+        ("del", ["délben", "dél körül", "dél tájban", "déli harangszó*"]),
+        ("kora_delutan", ["kora délután*"]),
+        ("delutan", ["délután*"]),
+        ("keso_delutan_alkonyat", ["késő délután*", "alkonyat*", "szürkület*", "napnyugta*", "naplemente*"]),
+        ("kora_este", ["kora este*"]),
+        ("este", ["este*", "esteled*"]),
+        ("keso_este", ["késő este*"]),
+        ("ejfel_korul", ["éjfél tájban*", "éjfél körül*", "éjfél után*", "éjfél előtt*"]),
+        ("ejjel", ["éjjel*", "éjszaka*"]),
+    ]
+
+    @classmethod
+    def generate_daypart_queries(cls) -> List[Tuple[str, List[str], str]]:
+        """
+        Returns a list of (category_id, terms_list, boolean_query).
+        """
+        queue = []
+        for cat_id, terms in cls.DAYPART_CATEGORIES:
+            query = MekQueryBuilder.build_query(terms)
+            queue.append((cat_id, terms, query))
+        return queue
+
+
 class MekQueryBuilder:
     """
     Constructs optimized boolean search queries for MEK fulltext search.
@@ -519,6 +550,9 @@ def main():
     parser.add_argument("--no-deep-extract", action="store_false", dest="deep_extract", help="Disable chapter deep extraction.")
     parser.add_argument("--download-covers", action="store_true", default=False, help="Download cover images.")
     parser.add_argument("--term", help="Search for a specific term or query directly.")
+    parser.add_argument("--dayparts-only", action="store_true", default=False, help="Search only Hungarian daypart categories.")
+    parser.add_argument("--include-dayparts", action="store_true", default=False, help="Search standard 1440 minutes and dayparts.")
+    parser.add_argument("--daypart-max-pages", type=int, default=3, help="Max pages per daypart query (default: 3).")
     parser.add_argument("--visible", action="store_true", help="Kept for backward compatibility (headless HTTP is standard).")
     args = parser.parse_args()
 
@@ -556,64 +590,77 @@ def main():
     )
 
     try:
-        generator = TimeTermGenerator(rules)
-        minute_queue = []
+        search_queue = []
 
         if args.term:
-            minute_queue.append((args.term, [args.term], [args.term]))
+            search_queue.append((args.term, [args.term], args.term, args.max_pages))
+        elif args.dayparts_only:
+            logging.info("Generating daypart search queries...")
+            for cat_id, terms, query in DaypartTermGenerator.generate_daypart_queries():
+                search_queue.append((f"daypart_{cat_id}", terms, query, args.daypart_max_pages))
         else:
+            generator = TimeTermGenerator(rules)
             logging.info("Generating canonical time terms and compressed queries for all 1440 minutes...")
             for h in range(24):
                 for m in range(60):
                     time_str = f"{h:02}:{m:02}"
                     terms = generator.generate_terms(h, m)
                     query = MekQueryBuilder.build_query(terms)
-                    minute_queue.append((time_str, terms, query))
+                    search_queue.append((time_str, terms, query, args.max_pages))
 
-            # Filter already processed
-            remaining = [item for item in minute_queue if item[0] not in processed_minutes]
-            if len(remaining) < len(minute_queue):
-                logging.info(f"Skipping {len(minute_queue) - len(remaining)} minutes already processed. {len(remaining)} remaining.")
-            
-            if args.limit > 0:
-                logging.info(f"Test mode: selecting {args.limit} minutes.")
-                minute_queue = remaining[:args.limit]
-            else:
-                minute_queue = remaining
+            if args.include_dayparts:
+                logging.info("Appending daypart search queries to queue...")
+                for cat_id, terms, query in DaypartTermGenerator.generate_daypart_queries():
+                    search_queue.append((f"daypart_{cat_id}", terms, query, args.daypart_max_pages))
 
-        logging.info(f"Starting optimized MEK search for {len(minute_queue)} minutes...")
+        # Filter already processed
+        remaining = [item for item in search_queue if item[0] not in processed_minutes]
+        if len(remaining) < len(search_queue):
+            logging.info(f"Skipping {len(search_queue) - len(remaining)} items already processed. {len(remaining)} remaining.")
+        
+        if args.limit > 0:
+            logging.info(f"Test mode: selecting {args.limit} items.")
+            search_queue = remaining[:args.limit]
+        else:
+            search_queue = remaining
+
+        logging.info(f"Starting optimized MEK search for {len(search_queue)} queries...")
         start_time = time.time()
 
         with open(args.output, "a", encoding="utf-8") as f:
-            for i, (time_str, terms, query) in enumerate(minute_queue):
-                logging.info(f"[{i+1}/{len(minute_queue)}] Searching minute {time_str} ({len(terms)} terms compressed)...")
+            for i, (item_id, terms, query, q_max_pages) in enumerate(search_queue):
+                logging.info(f"[{i+1}/{len(search_queue)}] Searching {item_id} ({len(terms)} terms compressed, max {q_max_pages} pages)...")
+                # Temporarily override max_pages if query specifies a custom limit
+                orig_max_pages = searcher.max_pages
+                searcher.max_pages = q_max_pages
                 results = searcher.search(query)
+                searcher.max_pages = orig_max_pages
                 
                 if results:
-                    logging.info(f"  -> Found {len(results)} valid matches for {time_str}.")
+                    logging.info(f"  -> Found {len(results)} valid matches for {item_id}.")
                     for res in results:
                         if not res.get("time_min_str") and not res.get("norm_time"):
-                            res["time_min_str"] = time_str
+                            res["time_min_str"] = item_id if ":" in item_id else None
                         f.write(json.dumps(res, ensure_ascii=False) + "\n")
                 else:
-                    logging.info(f"  -> No matches for {time_str}.")
+                    logging.info(f"  -> No matches for {item_id}.")
                     no_match_record = {
                         "search_term": query,
-                        "time_min_str": time_str if ":" in time_str else None,
+                        "time_min_str": item_id if ":" in item_id else None,
                         "count": 0
                     }
                     f.write(json.dumps(no_match_record, ensure_ascii=False) + "\n")
                 f.flush()
 
                 done = i + 1
-                total = len(minute_queue)
+                total = len(search_queue)
                 percent = (done / total) * 100 if total else 100.0
                 elapsed = time.time() - start_time
                 speed = done / elapsed if elapsed > 0 else 0.0
                 remaining_count = total - done
                 eta_s = int(remaining_count / speed) if speed > 0 else 0
                 eta_m, eta_sec = divmod(eta_s, 60)
-                logging.info(f"Progress: {done}/{total} ({percent:.1f}%) | Speed: {speed:.2f} min/s | ETA: {eta_m}m {eta_sec}s")
+                logging.info(f"Progress: {done}/{total} ({percent:.1f}%) | Speed: {speed:.2f} items/s | ETA: {eta_m}m {eta_sec}s")
 
     finally:
         searcher.close()

@@ -8,6 +8,8 @@ from typing import Dict, Iterable, List, Optional, Tuple, Any
 from bs4 import BeautifulSoup
 from bs4.dammit import UnicodeDammit
 
+from time_utils import parse_extended_hhmm
+
 RULES_PATH = Path(__file__).with_name("rules.json5")
 
 # ---------- utils ----------
@@ -18,7 +20,9 @@ def norm(s: str) -> str:
 
 def load_rules() -> dict:
     rules = json5.loads(RULES_PATH.read_text(encoding="utf-8"))
-    for r in rules["rules"]:
+    for r in rules.get("rules", []):
+        r["_re"] = re.compile(r["pattern"], re.IGNORECASE | re.UNICODE)
+    for r in rules.get("daypart_rules", []):
         r["_re"] = re.compile(r["pattern"], re.IGNORECASE | re.UNICODE)
     return rules
 
@@ -37,19 +41,21 @@ def raw_html_to_text(raw: bytes | str) -> str:
 def html_to_text(path: Path) -> str:
     return raw_html_to_text(path.read_bytes())
 
-def extract_from_html(html_content: str | bytes, rules: Optional[dict] = None) -> List[dict]:
+def extract_from_html(html_content: str | bytes, rules: Optional[dict] = None, include_dayparts: bool = True) -> List[dict]:
     """
     Extracts time records directly from an in-memory HTML string or bytes.
     """
     if rules is None:
         rules = load_rules()
-    elif not rules.get("rules", []) or "_re" not in rules["rules"][0]:
-        # Compile regexes if not already compiled
+    else:
         for r in rules.get("rules", []):
             if "_re" not in r:
                 r["_re"] = re.compile(r["pattern"], re.IGNORECASE | re.UNICODE)
+        for r in rules.get("daypart_rules", []):
+            if "_re" not in r:
+                r["_re"] = re.compile(r["pattern"], re.IGNORECASE | re.UNICODE)
     text = raw_html_to_text(html_content)
-    return list(extract(text, rules))
+    return list(extract(text, rules, include_dayparts=include_dayparts))
 
 def hhmm_to_minute(h: int, m: int) -> int:
     return (h % 24) * 60 + (m % 60)
@@ -196,12 +202,36 @@ def emit_record(rule_id: str, match_txt: str, s: int, e: int, text: str,
             "context": context
         }
 
+def emit_daypart_record(rule: dict, match_txt: str, s: int, e: int, text: str) -> dict:
+    context = get_expanded_context(text, s, e)
+    t_min = rule.get("time_min", "00:00")
+    t_max = rule.get("time_max", "24:00")
+    t_foc = rule.get("time_focus", t_min)
+    min_m = parse_extended_hhmm(t_min)
+    max_m = parse_extended_hhmm(t_max)
+    foc_m = parse_extended_hhmm(t_foc)
+    return {
+        "rule_id": rule.get("id", "daypart"),
+        "match": match_txt,
+        "norm_time": t_foc,
+        "time_min_str": t_min,
+        "time_max_str": t_max,
+        "time_focus_str": t_foc,
+        "time_min_m": min_m,
+        "time_max_m": max_m,
+        "time_focus_m": foc_m,
+        "minute": foc_m % 1440,
+        "minute_candidates": [foc_m % 1440],
+        "is_daypart": True,
+        "context": context
+    }
+
 # ---------- core extraction ----------
-def extract(text: str, rules: dict) -> Iterable[dict]:
+def extract(text: str, rules: dict, include_dayparts: bool = True) -> Iterable[dict]:
     dayparts = find_dayparts(text, rules)
     raw_matches = []
 
-    for r in rules["rules"]:
+    for r in rules.get("rules", []):
         kind = r["semantics"]; rx = r["_re"]
         if kind == "daypart_for_bias":
             continue  # never emit
@@ -248,7 +278,8 @@ def extract(text: str, rules: dict) -> Iterable[dict]:
                     h = int(m.group(1))
                 except (ValueError, TypeError):
                     continue
-                raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, [h], 0)))
+                h_cands = disambiguate_hour_candidates(h, ctx)
+                raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, h_cands, 0)))
 
             elif kind in ("half_next_hour","quarter_next_hour","threequarter_next_hour"):
                 target = m.group(1)
@@ -311,11 +342,32 @@ def extract(text: str, rules: dict) -> Iterable[dict]:
                 h_cands = disambiguate_hour_candidates(h_raw, ctx)
                 raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, h_cands, 0)))
 
-    # Suppress contained submatches (e.g. "nyolckor" inside "fél nyolckor" or "negyed nyolckor")
+    if include_dayparts and "daypart_rules" in rules:
+        for dr in rules["daypart_rules"]:
+            dr_rx = dr["_re"]
+            for m in dr_rx.finditer(text):
+                s, e = m.start(), m.end()
+                match_txt = m.group(0)
+                raw_matches.append((s, e, emit_daypart_record(dr, match_txt, s, e, text)))
+
+    # Identify all clock matches (non-dayparts)
+    clock_matches = [(s, e) for s, e, rec in raw_matches if not rec.get("is_daypart")]
+
+    # Suppress contained submatches (e.g. "nyolckor" inside "fél nyolckor" or "negyed nyolckor", or "este" inside "este 8 órakor")
     # Sort by start ascending, then length descending
     raw_matches.sort(key=lambda item: (item[0], -(item[1] - item[0])))
     filtered = []
     for s, e, rec in raw_matches:
+        if rec.get("is_daypart"):
+            # Suppress bare daypart if adjacent to or modifying a specific clock match (e.g. "este 8 órakor")
+            is_adjacent_to_clock = False
+            for cs, ce in clock_matches:
+                if not (ce + 25 < s or e < cs - 25):
+                    is_adjacent_to_clock = True
+                    break
+            if is_adjacent_to_clock:
+                continue
+
         is_submatch = False
         for fs, fe, _ in filtered:
             if fs <= s and e <= fe:
