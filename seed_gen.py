@@ -74,7 +74,7 @@ CREATE INDEX IF NOT EXISTS idx_entries_is_lit ON entries(is_literature);
                     title = data.get('title', '')
                     link = data.get('link', '')
                     snippet = data.get('snippet', '')
-                    is_lit = str(str(data.get('is_literature', False)).strip().lower() in ('1', 'true', 'yes')).lower()
+                    is_lit = 'true' if str(data.get('is_literature', False)).strip().lower() in ('1', 'true', 'yes') else 'false'
                     
                     valid_times_str = escape_sql_array(data.get('valid_times', []))
                     categories_str = escape_sql_array(data.get('topics', []))
@@ -84,7 +84,7 @@ CREATE INDEX IF NOT EXISTS idx_entries_is_lit ON entries(is_literature);
                     genre = data.get('genre', '')
                     source_url = data.get('source_url', '')
                     source_type = data.get('source_type', 'snippet_fallback')
-                    is_fallback = str(str(data.get('is_fallback', False)).strip().lower() in ('1', 'true', 'yes')).lower()
+                    is_fallback = 'true' if str(data.get('is_fallback', False)).strip().lower() in ('1', 'true', 'yes') else 'false'
 
                     sql = (
                         f"INSERT INTO entries (title, link, snippet, is_literature, valid_times, categories, urn, author, genre, source_url, source_type, is_fallback) "
