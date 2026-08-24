@@ -14,7 +14,15 @@ export async function GET({ url }) {
 
         const rows = dataset === 'date'
             ? await sql`
-                SELECT id, title, NULL::text AS author, snippet, valid_dates, ai_checked, ai_rating, ai_reason, link
+                SELECT id, title, NULL::text AS author, snippet,
+                       date_min_str, date_max_str, date_focus_str, day_of_week,
+                       CASE
+                           WHEN date_min_str IS NULL AND day_of_week IS NOT NULL THEN day_of_week
+                           WHEN date_min_str IS NULL THEN ''
+                           WHEN date_max_str IS NULL OR date_min_str = date_max_str THEN date_min_str
+                           ELSE date_min_str || ' – ' || date_max_str
+                       END AS display_date,
+                       ai_checked, ai_rating, ai_reason, link
                 FROM calendar_entries
                 WHERE title = ${title}
                 ORDER BY RANDOM()
