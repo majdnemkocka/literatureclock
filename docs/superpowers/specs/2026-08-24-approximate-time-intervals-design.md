@@ -269,8 +269,8 @@ A teljes újragradolás ajánlott, mert az összes fuzzy bejegyzés helyes inter
 
 ---
 
-## Nyitott kérdések (implementáció előtt megválaszolandó)
+## Döntések (lezárt)
 
-- [ ] A `grading-app` melyik mezőt mutassa az UI-n debugoláshoz — `time_min_str`–`time_max_str` stringeket, vagy percértékeket?
-- [ ] Legyen-e hard limit az AI által megadható intervallum szélességére (pl. max 6 óra = 360 perc), és mit tegyünk, ha az AI ennél szélesebbet ad?
-- [ ] A `valid_times` mező mikor törölhető véglegesen (melyik milestone után)?
+- **grading-app debug UI:** `time_min_str`–`time_max_str` string mezőket mutatja (emberi olvashatóság, konverzió az alkalmazás felelőssége).
+- **Intervallum-szélesség limit:** nincs hard limit — minden intervallumot eltárolunk. A scraping után hőtérképpel vizsgáljuk meg, hogy a nagyon széles (pl. `"este"` típusú) idézetek hol tömörülnek, és akkor döntünk a szűrési/súlyozási stratégiáról.
+- **`valid_times` törlése:** azonnal eltávolítható — jelenleg csak tesztfutások vannak, nincs megőrzendő éles adatbázis. A séma az első implementációs lépésben `valid_times` nélkül készül el.
