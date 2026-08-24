@@ -102,6 +102,10 @@ Return a list of objects. Each object must have:
 - "reason": (string) Short explanation (e.g., "Valid quote", "Corrected time from 08:00 to 07:30 for fél nyolckor", "Date format").
 - "rate": (integer) 0-5 rating of quality (i.e., 0 for DENY, 5 for perfect KEEP)
 - "status": "DENY" or "KEEP"
+- "am_pm": "AM", "PM", or "AMBIGUOUS"
+  * "AM": if the context indicates daytime / morning (e.g. "reggel", "délelőtt", "hajnal", "korán keltünk", "napközben", "délig").
+  * "PM": if the context indicates afternoon / evening / night (e.g. "este", "éjjel", "délután", "vacsora után", "lefekvés előtt", "sötétedéskor").
+  * "AMBIGUOUS": if neither morning nor evening is specified in the text (e.g. simply "öt órakor", "fél nyolckor").
 - "corrected_time": (string or null)
   * If the scraper's matched_time is inaccurate (e.g. matched '08:00' because of partial token 'nyolckor' in 'fél nyolckor' which is actually '07:30' or '19:30', or 'este 9' is 21:00), provide the corrected 24h time in 'HH:MM' format (e.g. '07:30', '19:30', '21:00').
   * If the matched_time is already correct or status is DENY, return null.
@@ -137,9 +141,13 @@ def get_unchecked_entries(cur, limit):
 def mark_as_checked(cur, results):
     if not results: return
     
-    # Update entries with rating, reason, and AI time override if provided
+    # Update entries with rating, reason, am_pm, and AI time override if provided
     for r in results:
         corrected_time = r.get('corrected_time')
+        am_pm_val = r.get('am_pm', 'AMBIGUOUS')
+        if am_pm_val not in ('AM', 'PM', 'AMBIGUOUS'):
+            am_pm_val = 'AMBIGUOUS'
+            
         norm_ct = None
         if corrected_time and isinstance(corrected_time, str):
             ct_clean = corrected_time.strip()
@@ -154,17 +162,19 @@ def mark_as_checked(cur, results):
                 SET ai_checked = TRUE, 
                     ai_rating = %s, 
                     ai_reason = %s,
+                    ai_am_pm = %s,
                     valid_times = ARRAY[%s]::TEXT[]
                 WHERE id = %s
-            """, (r.get('rate'), r.get('reason'), norm_ct, r['id']))
+            """, (r.get('rate'), r.get('reason'), am_pm_val, norm_ct, r['id']))
         else:
             cur.execute("""
                 UPDATE entries 
                 SET ai_checked = TRUE, 
                     ai_rating = %s, 
-                    ai_reason = %s 
+                    ai_reason = %s,
+                    ai_am_pm = %s
                 WHERE id = %s
-            """, (r.get('rate'), r.get('reason'), r['id']))
+            """, (r.get('rate'), r.get('reason'), am_pm_val, r['id']))
 
 def insert_deny_votes(cur, denials):
     if not denials: return

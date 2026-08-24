@@ -75,6 +75,16 @@
                 const data = await res.json();
                 if (data && !data.error) {
                     entry = data;
+                    if (dataset === 'time') {
+                        if (entry.ai_am_pm && ['am', 'pm', 'ambiguous'].includes(entry.ai_am_pm.toLowerCase())) {
+                            timeClass = entry.ai_am_pm.toLowerCase();
+                        } else if (entry.valid_times && entry.valid_times.length === 1) {
+                            const hour = parseInt(entry.valid_times[0].split(':')[0], 10);
+                            if (!isNaN(hour)) {
+                                timeClass = hour >= 12 ? 'pm' : 'am';
+                            }
+                        }
+                    }
                     await tick();
                     if (snippetContainer) {
                         snippetContainer.scrollTop = 0;
