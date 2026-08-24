@@ -8,6 +8,24 @@ from openai import OpenAI, APITimeoutError, APIConnectionError
 from typing import List, Dict
 from dotenv import load_dotenv
 
+# Add repo root to sys.path
+import sys
+from pathlib import Path
+REPO_ROOT = Path(__file__).resolve().parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+if str(REPO_ROOT / 'scrapers') not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / 'scrapers'))
+if str(REPO_ROOT / 'scrapers' / 'mek_search') not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / 'scrapers' / 'mek_search'))
+
+from extractor import raw_html_to_text
+try:
+    from mek_time_search import MekSourceFetcher
+    source_fetcher = MekSourceFetcher()
+except Exception:
+    source_fetcher = None
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -103,9 +121,10 @@ Return a list of objects. Each object must have:
 - "rate": (integer) 0-5 rating of quality (i.e., 0 for DENY, 5 for perfect KEEP)
 - "status": "DENY" or "KEEP"
 - "am_pm": "AM", "PM", or "AMBIGUOUS"
-  * "AM": if the context indicates daytime / morning (e.g. "reggel", "délelőtt", "hajnal", "korán keltünk", "napközben", "délig").
-  * "PM": if the context indicates afternoon / evening / night (e.g. "este", "éjjel", "délután", "vacsora után", "lefekvés előtt", "sötétedéskor").
-  * "AMBIGUOUS": if neither morning nor evening is specified in the text (e.g. simply "öt órakor", "fél nyolckor").
+  * Check the local snippet and the 'wider_context' (surrounding scene/paragraphs) for narrative cues about the time of day:
+    - "AM": morning / daytime events (e.g. "reggel", "délelőtt", "hajnal", "reggeli", "ébredés", "napfelkelte", "iskolába/munkába indulás", "délig").
+    - "PM": afternoon / evening / night events (e.g. "este", "éjjel", "délután", "vacsora", "lefekvés", "sötétedés", "lámpagyújtás", "csillagok", "alváshoz készülődés").
+    - "AMBIGUOUS": only if the wider scene still gives no clue whether it is AM or PM.
 - "corrected_time": (string or null)
   * If the scraper's matched_time is inaccurate (e.g. matched '08:00' because of partial token 'nyolckor' in 'fél nyolckor' which is actually '07:30' or '19:30', or 'este 9' is 21:00), provide the corrected 24h time in 'HH:MM' format (e.g. '07:30', '19:30', '21:00').
   * If the matched_time is already correct or status is DENY, return null.
@@ -114,7 +133,7 @@ Return a list of objects. Each object must have:
 def get_unchecked_entries(cur, limit):
     if RE_GRADE_AI_ONLY:
         cur.execute("""
-            SELECT e.id, e.title, e.snippet, e.valid_times
+            SELECT e.id, e.title, e.snippet, e.valid_times, e.source_url
             FROM entries e
             WHERE e.ai_checked IS FALSE
               AND e.is_literature IS TRUE
@@ -129,7 +148,7 @@ def get_unchecked_entries(cur, limit):
         """, (limit,))
     else:
         cur.execute("""
-            SELECT id, title, snippet, valid_times
+            SELECT id, title, snippet, valid_times, source_url
             FROM entries
             WHERE ai_checked IS FALSE
               AND is_literature IS TRUE
@@ -231,7 +250,7 @@ def process_batch(cur, entries):
     max_length = -1
 
     for e in entries:
-        # e = (id, title, snippet, valid_times)
+        # e = (id, title, snippet, valid_times, source_url)
         
         # Preprocess snippet: strip HTML and truncate
         raw_snippet = e[2] or ""
@@ -245,12 +264,36 @@ def process_batch(cur, entries):
         if len(clean_snippet) > 780:
             clean_snippet = clean_snippet[:780] + "..."
 
-        input_data.append({
+        wider_context = None
+        source_url = e[4] if len(e) > 4 else None
+        if source_url and source_fetcher:
+            try:
+                page_html = source_fetcher.fetch_page(source_url)
+                if page_html:
+                    doc_text = raw_html_to_text(page_html)
+                    raw_quote = re.sub(r'<[^>]+>', '', raw_snippet).strip()
+                    sample_words = " ".join(raw_quote.split()[:6])
+                    if sample_words:
+                        pos = doc_text.find(sample_words)
+                        if pos != -1:
+                            w_start = max(0, pos - 500)
+                            w_end = min(len(doc_text), pos + len(raw_quote) + 500)
+                            candidate_ctx = doc_text[w_start:w_end].strip()
+                            if len(candidate_ctx) > len(clean_snippet) + 40:
+                                wider_context = candidate_ctx
+            except Exception:
+                pass
+
+        item_data = {
             "id": e[0],
             "title": e[1],
             "snippet": clean_snippet,
             "matched_time": e[3]
-        })
+        }
+        if wider_context:
+            item_data["wider_context"] = wider_context
+
+        input_data.append(item_data)
 
     if longest_entry:
         print(f"  -> Longest in batch: ID {longest_entry['id']}, Length: {longest_entry['length']}, Title: {longest_entry['title']}")
