@@ -50,19 +50,20 @@ class WizardView(Container):
         with Horizontal(id="wizard-pipeline-selector"):
             for i, pipe in enumerate(self.pipelines):
                 variant = "primary" if i == 0 else "default"
-                yield Button(f"{pipe.icon} {pipe.title}", id=f"pipe-btn-{pipe.id}", variant=variant, classes="pipeline-tab-btn")
+                short_title = pipe.title.split("(")[0].strip()
+                yield Button(f"{pipe.icon} {short_title}", id=f"pipe-btn-{pipe.id}", variant=variant, classes="pipeline-tab-btn")
 
         with Horizontal(id="wizard-body"):
             with Vertical(id="wizard-step-list-col"):
                 yield Label("📌 Folyamat Lépései", classes="col-header")
                 yield OptionList(id="wizard-steps-option-list")
 
-            with VerticalScroll(id="wizard-step-detail-col"):
-                yield Static(id="wizard-step-title", classes="step-detail-title")
-                yield Static(id="wizard-step-desc", classes="step-detail-desc")
-                yield Static(id="wizard-prereq-badge", classes="prereq-badge")
-                
-                yield Vertical(id="wizard-params-container")
+            with Vertical(id="wizard-step-detail-col"):
+                with VerticalScroll(id="wizard-step-scroll-area"):
+                    yield Static(id="wizard-step-title", classes="step-detail-title")
+                    yield Static(id="wizard-step-desc", classes="step-detail-desc")
+                    yield Static(id="wizard-prereq-badge", classes="prereq-badge")
+                    yield Vertical(id="wizard-params-container")
 
                 with Horizontal(id="wizard-action-bar"):
                     yield Button("▶️ Lépés Indítása", id="btn-run-step", variant="success")
@@ -180,6 +181,12 @@ class WizardView(Container):
                 self._refresh_step_details()
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        idx = event.option_index
+        if 0 <= idx < len(self.current_pipeline.steps):
+            self.current_pipeline.current_step_index = idx
+            self._refresh_step_details()
+
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         idx = event.option_index
         if 0 <= idx < len(self.current_pipeline.steps):
             self.current_pipeline.current_step_index = idx

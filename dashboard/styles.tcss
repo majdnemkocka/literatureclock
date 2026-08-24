@@ -4,11 +4,15 @@ Screen {
     layout: vertical;
 }
 
-#header-bar {
-    height: 3;
+AppHeader {
     dock: top;
+    height: 3;
     background: #1e293b;
     border-bottom: solid #334155;
+}
+
+#header-bar {
+    height: 100%;
     padding: 0 1;
     align: left middle;
 }
@@ -54,20 +58,38 @@ Screen {
 
 #main-tabs {
     height: 1fr;
+    width: 100%;
+}
+
+Tabs {
+    dock: top;
+    height: 3;
+    background: #1e293b;
+}
+
+ContentSwitcher {
+    height: 1fr;
+    width: 100%;
 }
 
 TabPane {
+    height: 1fr;
+    width: 100%;
     padding: 1 1;
 }
 
-/* Wizard View Styles */
+/* =========================================================================
+   Wizard View
+   ========================================================================= */
 #wizard-container {
     height: 1fr;
+    width: 100%;
     layout: vertical;
 }
 
 #wizard-pipeline-selector {
     height: 3;
+    dock: top;
     margin-bottom: 1;
     align: center middle;
 }
@@ -78,18 +100,25 @@ TabPane {
 
 #wizard-body {
     height: 1fr;
+    width: 100%;
 }
 
 #wizard-step-list-col {
     width: 35%;
-    height: 1fr;
+    height: 100%;
     border-right: solid #334155;
     padding-right: 1;
 }
 
+#wizard-steps-option-list {
+    height: 1fr;
+    background: #1e293b;
+    border: solid #334155;
+}
+
 #wizard-step-detail-col {
     width: 65%;
-    height: 1fr;
+    height: 100%;
     padding-left: 1;
 }
 
@@ -135,6 +164,11 @@ TabPane {
     margin-bottom: 1;
 }
 
+#wizard-params-container {
+    height: auto;
+    margin-bottom: 1;
+}
+
 .param-row {
     height: 3;
     align: left middle;
@@ -164,26 +198,36 @@ TabPane {
     margin-right: 1;
 }
 
-/* Script Center Styles */
+/* =========================================================================
+   Script Center
+   ========================================================================= */
 #script-center-container {
     height: 1fr;
+    width: 100%;
     layout: vertical;
 }
 
 #script-center-body {
     height: 1fr;
+    width: 100%;
 }
 
 #script-list-col {
     width: 35%;
-    height: 1fr;
+    height: 100%;
     border-right: solid #334155;
     padding-right: 1;
 }
 
+#script-option-list {
+    height: 1fr;
+    background: #1e293b;
+    border: solid #334155;
+}
+
 #script-detail-col {
     width: 65%;
-    height: 1fr;
+    height: 100%;
     padding-left: 1;
 }
 
@@ -192,41 +236,54 @@ TabPane {
     margin-bottom: 1;
 }
 
+#script-params-container {
+    height: auto;
+    margin-bottom: 1;
+}
+
 #script-action-bar {
     height: 3;
     margin-top: 1;
 }
 
-/* Stats View Styles */
+/* =========================================================================
+   Stats View
+   ========================================================================= */
 #stats-container {
     height: 1fr;
+    width: 100%;
     padding: 1;
+}
+
+#stats-body {
+    height: 100%;
+    width: 100%;
 }
 
 #stats-cards-grid {
     grid-size: 2 2;
     grid-gutter: 1 2;
-    height: 16;
+    height: 12;
     margin-bottom: 1;
 }
 
 .stats-card {
     background: #1e293b;
     border: solid #334155;
-    padding: 1 2;
+    padding: 1 1;
     align: center middle;
 }
 
 .card-title {
     color: #94a3b8;
     text-style: bold;
-    margin-bottom: 1;
+    margin-bottom: 0;
 }
 
 .card-value {
     color: #38bdf8;
     text-style: bold;
-    margin-bottom: 1;
+    margin-bottom: 0;
 }
 
 .card-subtext {
@@ -243,10 +300,18 @@ TabPane {
     margin: 0 1;
 }
 
-/* Env Editor Styles */
+/* =========================================================================
+   Env Editor
+   ========================================================================= */
 #env-editor-container {
     height: 1fr;
+    width: 100%;
     padding: 1;
+}
+
+#env-editor-body {
+    height: 100%;
+    width: 100%;
 }
 
 .env-field-row {
@@ -291,11 +356,15 @@ TabPane {
     margin-right: 1;
 }
 
-/* Console Log Viewer Styles */
+/* =========================================================================
+   Console Log Viewer
+   ========================================================================= */
 #console-container {
-    height: 14;
-    border-top: solid #334155;
+    dock: bottom;
+    height: 11;
+    width: 100%;
     background: #020617;
+    border-top: solid #334155;
 }
 
 #console-toolbar {
@@ -322,12 +391,14 @@ TabPane {
 }
 
 #console-log {
+    height: 1fr;
     background: #020617;
     color: #e2e8f0;
     padding: 0 1;
 }
 
 Footer {
+    dock: bottom;
     background: #1e293b;
     color: #94a3b8;
 }

@@ -71,6 +71,19 @@ class LiteratureClockDashboardApp(App):
         tabs = self.query_one("#main-tabs", TabbedContent)
         tabs.active = tab_id
 
+    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        tab_pane = event.pane
+        if tab_pane and tab_pane.id == "tab-stats":
+            try:
+                self.query_one(StatsView).refresh_stats()
+            except Exception:
+                pass
+        elif tab_pane and tab_pane.id == "tab-env":
+            try:
+                self.query_one(EnvEditorView).reload_config()
+            except Exception:
+                pass
+
     def action_help(self) -> None:
         console = self.query_one(ProcessConsole)
         console.write_info("--- SÚGÓ & GYORSBILLENTYŰK ---")

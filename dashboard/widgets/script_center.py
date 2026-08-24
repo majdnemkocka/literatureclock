@@ -34,12 +34,12 @@ class ScriptCenterView(Container):
                 yield Label("📂 Szkript Katalógus", classes="col-header")
                 yield OptionList(id="script-option-list")
 
-            with VerticalScroll(id="script-detail-col"):
-                yield Static(id="script-detail-title", classes="step-detail-title")
-                yield Static(id="script-detail-category", classes="script-category-badge")
-                yield Static(id="script-detail-desc", classes="step-detail-desc")
-                
-                yield Vertical(id="script-params-container")
+            with Vertical(id="script-detail-col"):
+                with VerticalScroll(id="script-detail-scroll-area"):
+                    yield Static(id="script-detail-title", classes="step-detail-title")
+                    yield Static(id="script-detail-category", classes="script-category-badge")
+                    yield Static(id="script-detail-desc", classes="step-detail-desc")
+                    yield Vertical(id="script-params-container")
 
                 with Horizontal(id="script-action-bar"):
                     yield Button("▶️ Szkript Futtatása", id="btn-run-script", variant="success")
@@ -103,6 +103,12 @@ class ScriptCenterView(Container):
             self.post_message(self.RunScriptRequested(self.current_task))
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        idx = event.option_index
+        if 0 <= idx < len(self.tasks):
+            self.active_task_idx = idx
+            self._refresh_details()
+
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         idx = event.option_index
         if 0 <= idx < len(self.tasks):
             self.active_task_idx = idx
