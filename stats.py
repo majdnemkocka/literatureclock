@@ -39,9 +39,13 @@ def get_hits_stats(jsonl_path='hits.jsonl') -> Dict[str, Any]:
 
             total_hits += 1
 
-            # Extract normalized times from time_min_str or norm_time
+            # Extract normalized times from time_min_str, date_min_str, day_of_week, or norm_time
             if data.get('time_min_str'):
                 norm_times.add(data['time_min_str'])
+            elif data.get('date_min_str'):
+                norm_times.add(data['date_min_str'])
+            elif data.get('day_of_week'):
+                norm_times.add(data['day_of_week'])
             elif data.get('norm_time'):
                 norm_times.add(data['norm_time'])
 

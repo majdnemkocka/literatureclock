@@ -1,3 +1,4 @@
+import argparse
 import os
 import json
 import psycopg2
@@ -8,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
-OUTPUT_HTML = 'ai_stats_chart.html'
+
 
 def normalize_reason(reason):
     if not reason:
@@ -35,19 +36,29 @@ def normalize_reason(reason):
     
     return "Other"
 
+
 def main():
+    parser = argparse.ArgumentParser(description="Generate AI grading statistics chart for Clock (time) or Calendar (date).")
+    parser.add_argument("--dataset", choices=["time", "date"], default="time", help="Dataset to visualize (time or date).")
+    parser.add_argument("--output", default=None, help="Output HTML file path.")
+    args = parser.parse_args()
+
     if not DATABASE_URL:
         print("Error: DATABASE_URL is not set.")
         return
+
+    table_name = "calendar_entries" if args.dataset == "date" else "entries"
+    output_html = args.output or ("ai_calendar_stats_chart.html" if args.dataset == "date" else "ai_stats_chart.html")
+    title_text = f"AI Grading Statistics ({'Calendar' if args.dataset == 'date' else 'Clock'})"
 
     conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
 
     # 1. Get AI ratings and reasons
-    print("Fetching AI ratings and reasons...")
-    cur.execute("""
+    print(f"Fetching AI ratings and reasons from {table_name}...")
+    cur.execute(f"""
         SELECT ai_rating, ai_reason 
-        FROM entries 
+        FROM {table_name}
         WHERE ai_checked = TRUE
     """)
     rows = cur.fetchall()
@@ -78,10 +89,11 @@ def main():
     conn.close()
 
     # Generate HTML
-    generate_html(total_checked, rating_counts, mean_rating, median_rating, denied_stats)
-    print(f"\nAI Stats HTML generated: {OUTPUT_HTML}")
+    generate_html(output_html, title_text, total_checked, rating_counts, mean_rating, median_rating, denied_stats)
+    print(f"\nAI Stats HTML generated: {output_html}")
 
-def generate_html(total, counts, mean, median, denied_reasons):
+
+def generate_html(output_html, title_text, total, counts, mean, median, denied_reasons):
     rating_labels = [str(i) for i in range(6)]
     rating_data = [counts[i] for i in range(6)]
     
@@ -93,7 +105,7 @@ def generate_html(total, counts, mean, median, denied_reasons):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Literature Clock - AI Statistics</title>
+    <title>{title_text}</title>
     <style>
         body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background: #f0f2f5; color: #333; }}
         .container {{ max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }}

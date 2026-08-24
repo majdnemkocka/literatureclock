@@ -42,7 +42,19 @@
 
     function getExpectedValue(currentEntry) {
         if (!currentEntry) return '';
-        if (dataset === 'date') return currentEntry.valid_dates ? currentEntry.valid_dates[0] : '';
+        if (dataset === 'date') {
+            if (currentEntry.date_min_str && currentEntry.date_max_str && currentEntry.date_min_str !== currentEntry.date_max_str) {
+                const range = `${currentEntry.date_min_str} – ${currentEntry.date_max_str}`;
+                return currentEntry.day_of_week ? `${range} (${currentEntry.day_of_week})` : range;
+            }
+            if (currentEntry.date_min_str) {
+                return currentEntry.day_of_week ? `${currentEntry.date_min_str} (${currentEntry.day_of_week})` : currentEntry.date_min_str;
+            }
+            if (currentEntry.day_of_week) {
+                return currentEntry.day_of_week;
+            }
+            return '';
+        }
         if (currentEntry.time_min_str && currentEntry.time_max_str && currentEntry.time_min_str !== currentEntry.time_max_str) {
             return `${currentEntry.time_min_str} – ${currentEntry.time_max_str}`;
         }
@@ -469,7 +481,7 @@
                                 <div class="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
                                     <div class="flex items-center justify-between gap-2 mb-2 text-[11px] text-gray-500">
                                         <span class="font-mono">#{sample.id}</span>
-                                        <span class="truncate">{dataset === 'date' ? sample.valid_dates : (sample.display_time || sample.time_min_str || '')}</span>
+                                        <span class="truncate">{dataset === 'date' ? (sample.display_date || sample.date_min_str || sample.day_of_week || '') : (sample.display_time || sample.time_min_str || '')}</span>
                                     </div>
                                     {#if sample.ai_rating !== null || sample.ai_reason}
                                         <div class="mb-2 p-2 bg-blue-50 border border-blue-100 rounded text-[11px] text-blue-900">

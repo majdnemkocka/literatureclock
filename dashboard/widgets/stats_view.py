@@ -42,7 +42,8 @@ class StatsView(Container):
                     yield Static("", id="stat-cache-size", classes="card-subtext")
 
             with Horizontal(id="stats-actions-bar"):
-                yield Button("📈 Időpont Diagram Megnyitása (db_stats_chart.html)", id="btn-open-db-chart", variant="primary")
+                yield Button("🕒 Óra Diagram (db_stats_chart.html)", id="btn-open-db-chart", variant="primary")
+                yield Button("📅 Naptár Diagram (db_calendar_stats_chart.html)", id="btn-open-cal-chart", variant="default")
                 yield Button("🤖 AI Értékelés Diagram (ai_stats_chart.html)", id="btn-open-ai-chart", variant="default")
                 yield Button("🏛️ MEK Letöltési Diagram (mek_stats_chart.html)", id="btn-open-mek-chart", variant="default")
                 yield Button("🔄 Frissítés", id="btn-refresh-stats", variant="success")
@@ -51,8 +52,10 @@ class StatsView(Container):
         self.refresh_stats()
 
     def refresh_stats(self) -> None:
-        # MEK Time search results
-        mek_time_file = REPO_ROOT / "scrapers" / "mek_search" / "mek_search_results.jsonl"
+        # MEK Time search results (check new name first, fallback to legacy)
+        mek_time_file = REPO_ROOT / "scrapers" / "mek_search" / "mek_time_search_results.jsonl"
+        if not mek_time_file.exists():
+            mek_time_file = REPO_ROOT / "scrapers" / "mek_search" / "mek_search_results.jsonl"
         self._update_file_stat("#stat-mek-hits", "#stat-mek-size", mek_time_file)
 
         # MEK Calendar search results
@@ -94,6 +97,10 @@ class StatsView(Container):
             self.refresh_stats()
         elif bid == "btn-open-db-chart":
             chart = REPO_ROOT / "db_stats_chart.html"
+            if chart.exists():
+                webbrowser.open(chart.as_uri())
+        elif bid == "btn-open-cal-chart":
+            chart = REPO_ROOT / "db_calendar_stats_chart.html"
             if chart.exists():
                 webbrowser.open(chart.as_uri())
         elif bid == "btn-open-ai-chart":
