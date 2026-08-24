@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import math
 import random
 import re
 import sys
@@ -12,6 +13,7 @@ from urllib.parse import urljoin, urlparse
 
 import json5
 import requests
+from bs4 import BeautifulSoup
 
 # Add repo root and scrapers directory to sys.path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -23,24 +25,9 @@ if str(REPO_ROOT / 'scrapers') not in sys.path:
 from mek_metadata import MekMetadataFetcher
 from extractor import extract_from_html, extract, raw_html_to_text, load_rules
 
-try:
-    from bs4 import BeautifulSoup
-except ImportError:
-    BeautifulSoup = None
-
-try:
-    from selenium import webdriver
-    from selenium.common.exceptions import TimeoutException, WebDriverException
-    from selenium.webdriver.chrome.service import Service
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.support.ui import WebDriverWait, Select
-    from webdriver_manager.chrome import ChromeDriverManager
-except ImportError:
-    webdriver = None
-
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 def load_rules(path):
     """Loads rules.json5 using json5 parser."""
@@ -50,6 +37,7 @@ def load_rules(path):
     except Exception as e:
         logging.error(f"Failed to load rules from {path}: {e}")
         return None
+
 
 class TimeTermGenerator:
     def __init__(self, rules):
@@ -186,12 +174,32 @@ class TimeTermGenerator:
 
         return list(terms)
 
+
+class MekQueryBuilder:
+    """
+    Constructs optimized boolean search queries for MEK fulltext search.
+    Wraps phrases in quotes and joins alternatives with pipe '|'.
+    """
+    @staticmethod
+    def build_query(terms: List[str]) -> str:
+        formatted = []
+        for t in sorted(set(terms)):
+            t_clean = t.strip()
+            if not t_clean:
+                continue
+            if " " in t_clean or ":" in t_clean or "-" in t_clean:
+                formatted.append(f'"{t_clean}"')
+            else:
+                formatted.append(t_clean)
+        return " | ".join(formatted)
+
+
 class MekSourceFetcher:
     """
-    Downloads and caches source document pages (HTML/TXT) using transparent relative paths.
+    Fetches and caches MEK source pages (HTML/TXT) to local storage.
     """
     def __init__(self, cache_dir: Optional[Path] = None, request_delay_sec: float = 0.5):
-        self.cache_dir = Path(cache_dir) if cache_dir else Path(__file__).resolve().parent / "cache" / "pages"
+        self.cache_dir = Path(cache_dir) if cache_dir else Path(__file__).resolve().parent / "cache" / "sources"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.request_delay_sec = request_delay_sec
         self.session = requests.Session()
@@ -199,398 +207,373 @@ class MekSourceFetcher:
             "User-Agent": "LiteratureClockHU/1.0 (+https://github.com/notAnElephant/literatureclock) SourceFetcher"
         })
 
-    def get_cache_path(self, source_url: str) -> Optional[Path]:
-        parsed = urlparse(source_url)
-        rel_path = parsed.path.lstrip("/")
-        if not rel_path:
-            return None
-        return self.cache_dir / rel_path
+    def get_cache_path(self, url: str) -> Path:
+        parsed = urlparse(url)
+        path_str = parsed.path.lstrip("/")
+        parts = path_str.split("/")
+        if len(parts) >= 2:
+            return self.cache_dir / Path(*parts)
+        safe_name = re.sub(r'[^\w\-_\.]', '_', url)
+        return self.cache_dir / f"{safe_name}.htm"
 
-    def fetch_page(self, source_url: str, force_refresh: bool = False) -> Optional[str]:
-        if not source_url:
+    def fetch_page(self, url: str) -> Optional[str]:
+        if not url:
             return None
-        cache_path = self.get_cache_path(source_url)
-        if cache_path and not force_refresh and cache_path.exists():
+        cache_path = self.get_cache_path(url)
+        if cache_path.exists():
             try:
-                raw_bytes = cache_path.read_bytes()
-                from bs4.dammit import UnicodeDammit
-                dammit = UnicodeDammit(raw_bytes, is_html=True)
-                return dammit.unicode_markup or raw_bytes.decode("latin-2", "ignore")
+                return cache_path.read_text(encoding="utf-8", errors="replace")
             except Exception as e:
-                logging.warning(f"Failed to read cached page at {cache_path}: {e}")
+                logging.warning(f"Failed to read cached source at {cache_path}: {e}")
 
         try:
             time.sleep(self.request_delay_sec)
-            resp = self.session.get(source_url, timeout=(10, 60))
-            if 200 <= resp.status_code < 400 and resp.content:
-                if cache_path:
+            resp = self.session.get(url, timeout=(10, 30))
+            if resp.status_code == 200:
+                resp.encoding = resp.apparent_encoding or "utf-8"
+                content = resp.text
+                try:
                     cache_path.parent.mkdir(parents=True, exist_ok=True)
-                    cache_path.write_bytes(resp.content)
-                from bs4.dammit import UnicodeDammit
-                dammit = UnicodeDammit(resp.content, is_html=True)
-                return dammit.unicode_markup or resp.content.decode("latin-2", "ignore")
+                    cache_path.write_text(content, encoding="utf-8", errors="replace")
+                except Exception as e:
+                    logging.warning(f"Failed to write source cache at {cache_path}: {e}")
+                return content
+            else:
+                logging.warning(f"Failed to fetch {url}, status: {resp.status_code}")
+                return None
         except Exception as e:
-            logging.warning(f"Failed to fetch page from {source_url}: {e}")
+            logging.warning(f"Network error fetching {url}: {e}")
+            return None
 
-        return None
 
 class MekSearcher:
-    def __init__(self, headless: bool = True, rules: Optional[dict] = None,
-                 deep_extract: bool = True, download_covers: bool = False,
-                 cache_dir: Optional[Path] = None):
-        if not webdriver:
-            raise ImportError("A MekSearcher futtatásához a 'selenium' csomag szükséges (pip install selenium webdriver-manager).")
-        self.headless = headless
+    """
+    Fast, direct HTTP-based searcher for MEK fulltext search (https://mek.oszk.hu/hu/search/elfulltext/).
+    Supports automatic hit count extraction and precise pagination.
+    """
+    def __init__(
+        self,
+        rules=None,
+        deep_extract: bool = True,
+        download_covers: bool = False,
+        max_pages: int = 5,
+        request_delay_sec: float = 0.4,
+        cache_dir: Optional[Path] = None,
+        headless: bool = True  # Backward compatibility parameter
+    ):
+        self.url = "https://mek.oszk.hu/hu/search/elfulltext/"
         self.rules = rules
         self.deep_extract = deep_extract
         self.download_covers = download_covers
-        
+        self.max_pages = max_pages
+        self.request_delay_sec = request_delay_sec
         base_cache = Path(cache_dir) if cache_dir else Path(__file__).resolve().parent / "cache"
         self.metadata_fetcher = MekMetadataFetcher(cache_dir=base_cache / "metadata")
-        self.source_fetcher = MekSourceFetcher(cache_dir=base_cache / "pages")
+        self.source_fetcher = MekSourceFetcher(cache_dir=base_cache / "sources")
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "hu-HU,hu;q=0.9,en;q=0.8",
+        })
 
-        self.options = webdriver.ChromeOptions()
-        if headless:
-            self.options.add_argument("--headless")
-        self.options.add_argument("--no-sandbox")
-        self.options.add_argument("--disable-dev-shm-usage")
-        self._init_driver()
-        self.url = "https://mek.oszk.hu/hu/search/elfulltext/#sealist"
-
-    def _init_driver(self):
-        logging.info("Initializing Chrome Driver...")
-        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=self.options)
-
-    def restart_driver(self):
-        logging.warning("Restarting Chrome Driver due to error...")
-        try:
-            self.driver.quit()
-        except Exception:
-            pass
-        self._init_driver()
-        
-    def search(self, term: str) -> List[Dict[str, Any]]:
-        # Retry loop for driver stability
-        for attempt in range(2):
-            try:
-                return self._search_attempt(term)
-            except WebDriverException as e:
-                logging.error(f"WebDriver error during search for '{term}' (attempt {attempt+1}/2): {e}")
-                if attempt == 0:
-                    self.restart_driver()
-                else:
-                    logging.error("Failed to search even after restart.")
-                    return []
-            except Exception as e:
-                logging.error(f"Unexpected error during search for '{term}': {e}")
-                return []
-        return []
-
-    def _search_attempt(self, term: str) -> List[Dict[str, Any]]:
+    def search(self, term_or_query: str, max_pages: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Executes search via HTTP POST, parses exact hit count, paginates, and enriches hits.
+        """
+        effective_max_pages = max_pages if max_pages is not None else self.max_pages
         raw_results = []
-        logging.info(f"Navigating to {self.url}...")
-        self.driver.get(self.url)
-        search_input = WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located((By.NAME, "body"))
-        )
         
-        # Set results per page to 100
         try:
-            size_select = Select(self.driver.find_element(By.NAME, "size"))
-            size_select.select_by_value("100")
+            # 1. Fetch Page 1
+            time.sleep(self.request_delay_sec)
+            resp = self.session.post(self.url, data={"body": term_or_query, "size": "100", "from": "1"}, timeout=(10, 30))
+            if resp.status_code != 200 or not resp.text:
+                logging.warning(f"Search request failed for '{term_or_query}', status: {resp.status_code}")
+                return []
+
+            resp.encoding = "utf-8"
+            soup = BeautifulSoup(resp.text, "html.parser")
+            
+            # Extract total hit count from HTML (.numberofhits or results h4)
+            num_elem = soup.find(class_="numberofhits") or soup.select_one("div.elful.results h4") or soup.find("h4")
+            total_hits = 0
+            if num_elem:
+                match = re.search(r"(\d+)", num_elem.get_text(strip=True))
+                if match:
+                    total_hits = int(match.group(1))
+
+            page_1_hits = self._parse_hit_elements(soup, term_or_query)
+            raw_results.extend(page_1_hits)
+
+            if total_hits == 0 and not raw_results:
+                return []
+
+            # Determine pagination
+            expected_pages = math.ceil(total_hits / 100) if total_hits > 0 else (1 if len(page_1_hits) < 100 else effective_max_pages)
+            pages_to_fetch = min(effective_max_pages, max(1, expected_pages))
+
+            logging.info(f"Query [{term_or_query[:60]}...] -> {total_hits} total hits ({pages_to_fetch}/{expected_pages} pages)")
+
+            # Fetch subsequent pages if any
+            for page in range(2, pages_to_fetch + 1):
+                offset = (page - 1) * 100 + 1
+                time.sleep(self.request_delay_sec)
+                p_resp = self.session.post(self.url, data={"body": term_or_query, "size": "100", "from": str(offset)}, timeout=(10, 30))
+                if p_resp.status_code == 200 and p_resp.text:
+                    p_resp.encoding = "utf-8"
+                    p_soup = BeautifulSoup(p_resp.text, "html.parser")
+                    p_hits = self._parse_hit_elements(p_soup, term_or_query)
+                    if not p_hits:
+                        break
+                    raw_results.extend(p_hits)
+                else:
+                    break
+
         except Exception as e:
-            logging.warning(f"Could not set result size to 100: {e}")
-
-        quoted_term = f'"{term}"'
-        logging.info(f"Searching for: {quoted_term}")
-        search_input.clear()
-        search_input.send_keys(quoted_term)
-        submit_btn = self.driver.find_element(By.XPATH, "//input[@type='submit']")
-        submit_btn.click()
-        
-        # Wait for results
-        try:
-            WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "hit"))
-            )
-        except TimeoutException:
-            logging.info("  -> No hits found (timeout waiting for .hit).")
+            logging.error(f"Error during HTTP search for '{term_or_query}': {e}")
             return []
-        
-        # Grab all HTML immediately
-        hit_divs = self.driver.find_elements(By.CLASS_NAME, "hit")
-        logging.info(f"Found {len(hit_divs)} hit blocks.")
-        
-        hits_html = []
-        for div in hit_divs:
-            try:
-                hits_html.append(div.get_attribute('outerHTML'))
-            except Exception as e:
-                logging.warning(f"Error grabbing HTML for a hit: {e}")
 
-        # Parse with BeautifulSoup
-        for i, html in enumerate(hits_html):
-            try:
-                soup = BeautifulSoup(html, 'html.parser')
-                
-                link_elem = soup.find('a', class_='etitem')
-                if not link_elem:
-                    logging.warning(f"Hit {i}: Could not find .etitem inside .hit")
-                    continue
+        # Enrich with metadata, deep extraction, and literature checks
+        return self._process_and_enrich_hits(raw_results, term_or_query)
 
-                link = link_elem.get('href', '')
-                
-                author_elem = link_elem.find(class_='dcauthor')
+    def _parse_hit_elements(self, soup: BeautifulSoup, term: str) -> List[Dict[str, Any]]:
+        results = []
+        hit_blocks = soup.find_all("div", class_="hit")
+        for hit in hit_blocks:
+            try:
+                author_elem = hit.find(class_="dcauthor")
+                title_elem = hit.find(class_="dctitle")
                 author = author_elem.get_text(strip=True) if author_elem else ""
-                    
-                title_elem = link_elem.find(class_='dctitle')
                 title = title_elem.get_text(strip=True) if title_elem else ""
-                    
-                snippet_elem = link_elem.find(class_='foundtext')
-                snippet = str(snippet_elem) if snippet_elem else ""
-                
-                # Extract "Találat helye" link (.mekfound)
-                found_elem = soup.find('a', class_='mekfound')
-                found_href = found_elem.get('href', '').strip() if found_elem else ''
-                source_url = urljoin('https://mek.oszk.hu', found_href) if found_href else ''
 
-                full_title = f"{author}: {title}" if author else title
+                link = ""
+                source_url = ""
+                for a in hit.find_all("a"):
+                    href = a.get("href", "")
+                    text = a.get_text(strip=True)
+                    if not link and ("mek.oszk.hu" in href or re.match(r"^/\d{5}/", href)):
+                        link = urljoin("https://mek.oszk.hu", href)
+                    if "Találat helye" in text or "talalat" in href.lower():
+                        source_url = urljoin("https://mek.oszk.hu", href)
 
-                if full_title:
-                    raw_results.append({
+                foundtext = hit.find(class_="foundtext")
+                snippet = foundtext.get_text(separator=" ", strip=True) if foundtext else ""
+
+                if link and (title or author):
+                    results.append({
                         "search_term": term,
-                        "title": full_title,
+                        "title": title,
                         "author": author,
                         "link": link,
                         "source_url": source_url,
                         "snippet": snippet
                     })
-                else:
-                        logging.warning(f"Hit {i}: Skipped because title is empty.")
-
             except Exception as e:
-                logging.warning(f"Error parsing hit block {i}: {e}")
-        
-        # Enrich with metadata, deep extraction and literature checks
-        if raw_results:
-            logging.info(f"Processing {len(raw_results)} hits (deep_extract={self.deep_extract})...")
-            valid_results = []
-            fallback_results = []
-            
-            for res in raw_results:
-                meta = self.metadata_fetcher.fetch_metadata(res['link'])
-                is_lit = meta.get("is_literature", False)
-                topics = meta.get("topics", [])
-                
-                # If is_literature or topics not in meta, ensure it is populated
-                if "is_literature" not in meta or "topics" not in meta:
-                    is_lit, topics = self.check_is_literature(res['link'])
-                    meta["is_literature"] = is_lit
-                    meta["topics"] = topics
+                logging.debug(f"Failed to parse hit element: {e}")
+        return results
 
-                # Deep extraction if source_url is present and enabled
-                deep_success = False
-                if self.deep_extract and res.get("source_url") and self.rules:
-                    html_page = self.source_fetcher.fetch_page(res["source_url"])
-                    if html_page:
-                        try:
-                            extracted_records = extract_from_html(html_page, self.rules)
-                            if extracted_records:
-                                deep_success = True
-                                for rec in extracted_records:
-                                    norm_t = rec.get("norm_time")
-                                    valid_time_list = rec.get("valid_times", [norm_t] if norm_t else [])
-                                    deep_item = {
-                                        "search_term": term,
-                                        "title": meta.get("title") or res["title"],
-                                        "author": meta.get("author") or res["author"],
-                                        "link": res["link"],
-                                        "source_url": res["source_url"],
-                                        "source_type": "deep_extract",
-                                        "is_fallback": False,
-                                        "snippet": rec["context"],
-                                        "matched_text": rec["match"],
-                                        "norm_time": norm_t,
-                                        "minute": rec.get("minute"),
-                                        "minute_candidates": rec.get("minute_candidates"),
-                                        "rule_id": rec.get("rule_id"),
-                                        "valid_times": valid_time_list,
-                                        "is_literature": is_lit,
-                                        "topics": topics,
-                                        "urn": meta.get("urn", ""),
-                                        "genre": meta.get("genre", ""),
-                                        "cover_url": meta.get("cover_url", ""),
-                                        "raw_metadata": meta.get("raw_metadata", {}),
-                                        "fallback_snippet": res["snippet"]
-                                    }
-                                    if self.download_covers and meta.get("mek_id"):
-                                        self.metadata_fetcher.fetch_cover_image(meta["mek_id"], Path("covers"))
-                                    if is_lit:
-                                        valid_results.append(deep_item)
-                                    else:
-                                        fallback_results.append(deep_item)
-                        except Exception as e:
-                            logging.warning(f"Deep extraction failed on {res['source_url']}: {e}")
+    def _process_and_enrich_hits(self, raw_results: List[Dict[str, Any]], term: str) -> List[Dict[str, Any]]:
+        if not raw_results:
+            return []
 
-                # Fallback to snippet if deep extract didn't yield records
-                if not deep_success:
-                    fb_text = raw_html_to_text(res.get("snippet", ""))
-                    fb_records = list(extract(fb_text, self.rules)) if self.rules else []
-                    if fb_records:
-                        res["norm_time"] = fb_records[0].get("norm_time")
-                        res["valid_times"] = fb_records[0].get("valid_times", [res["norm_time"]] if res["norm_time"] else [])
-                        res["matched_text"] = fb_records[0].get("match")
+        valid_results = []
+        fallback_results = []
+
+        for res in raw_results:
+            meta = self.metadata_fetcher.fetch_metadata(res["link"])
+            is_lit = meta.get("is_literature", False)
+            topics = meta.get("topics", [])
+
+            # Deep extraction if source_url is present and enabled
+            deep_success = False
+            if self.deep_extract and res.get("source_url") and self.rules:
+                html_page = self.source_fetcher.fetch_page(res["source_url"])
+                if html_page:
+                    try:
+                        extracted_records = extract_from_html(html_page, self.rules)
+                        if extracted_records:
+                            deep_success = True
+                            for rec in extracted_records:
+                                norm_t = rec.get("norm_time")
+                                valid_time_list = rec.get("valid_times", [norm_t] if norm_t else [])
+                                deep_item = {
+                                    "search_term": term,
+                                    "title": meta.get("title") or res["title"],
+                                    "author": meta.get("author") or res["author"],
+                                    "link": res["link"],
+                                    "source_url": res["source_url"],
+                                    "source_type": "deep_extract",
+                                    "is_fallback": False,
+                                    "snippet": rec["context"],
+                                    "matched_text": rec["match"],
+                                    "norm_time": norm_t,
+                                    "minute": rec.get("minute"),
+                                    "minute_candidates": rec.get("minute_candidates"),
+                                    "rule_id": rec.get("rule_id"),
+                                    "valid_times": valid_time_list,
+                                    "is_literature": is_lit,
+                                    "topics": topics,
+                                    "urn": meta.get("urn", ""),
+                                    "genre": meta.get("genre", ""),
+                                    "cover_url": meta.get("cover_url", ""),
+                                    "raw_metadata": meta.get("raw_metadata", {}),
+                                    "fallback_snippet": res["snippet"]
+                                }
+                                if self.download_covers and meta.get("mek_id"):
+                                    self.metadata_fetcher.fetch_cover_image(meta["mek_id"], Path("covers"))
+                                if is_lit:
+                                    valid_results.append(deep_item)
+                                else:
+                                    fallback_results.append(deep_item)
+                    except Exception as e:
+                        logging.warning(f"Deep extraction failed on {res['source_url']}: {e}")
+
+            # Fallback to snippet if deep extract didn't yield records
+            if not deep_success:
+                fb_text = raw_html_to_text(res.get("snippet", ""))
+                fb_records = list(extract(fb_text, self.rules)) if self.rules else []
+                if fb_records:
+                    res["norm_time"] = fb_records[0].get("norm_time")
+                    res["valid_times"] = fb_records[0].get("valid_times", [res["norm_time"]] if res["norm_time"] else [])
+                    res["matched_text"] = fb_records[0].get("match")
+                else:
+                    term_records = list(extract(term, self.rules)) if self.rules else []
+                    if term_records:
+                        res["norm_time"] = term_records[0].get("norm_time")
+                        res["valid_times"] = term_records[0].get("valid_times", [res["norm_time"]] if res["norm_time"] else [])
                     else:
-                        term_records = list(extract(term, self.rules)) if self.rules else []
-                        if term_records:
-                            res["norm_time"] = term_records[0].get("norm_time")
-                            res["valid_times"] = term_records[0].get("valid_times", [res["norm_time"]] if res["norm_time"] else [])
-                        else:
-                            res["valid_times"] = []
-                    res["source_type"] = "snippet_fallback"
-                    res["is_fallback"] = True
-                    res["is_literature"] = is_lit
-                    res["topics"] = topics
-                    res["urn"] = meta.get("urn", "")
-                    res["genre"] = meta.get("genre", "")
-                    res["cover_url"] = meta.get("cover_url", "")
-                    res["raw_metadata"] = meta.get("raw_metadata", {})
-                    if is_lit:
-                        valid_results.append(res)
-                    else:
-                        fallback_results.append(res)
-            
-            if valid_results:
-                logging.info(f"  -> {len(valid_results)} literature hits kept.")
-                return valid_results
-            elif fallback_results:
-                logging.info(f"  -> 0 literature hits. Returning {len(fallback_results)} non-literature hits as fallback.")
-                return fallback_results
-        
+                        res["valid_times"] = []
+                res["source_type"] = "snippet_fallback"
+                res["is_fallback"] = True
+                res["is_literature"] = is_lit
+                res["topics"] = topics
+                res["urn"] = meta.get("urn", "")
+                res["genre"] = meta.get("genre", "")
+                res["cover_url"] = meta.get("cover_url", "")
+                res["raw_metadata"] = meta.get("raw_metadata", {})
+                if is_lit:
+                    valid_results.append(res)
+                else:
+                    fallback_results.append(res)
+
+        if valid_results:
+            return valid_results
+        elif fallback_results:
+            return fallback_results
         return []
 
-    def check_is_literature(self, link: str) -> Tuple[bool, List[str]]:
-        if not link:
-            return False, []
-        try:
-            meta = self.metadata_fetcher.fetch_metadata(link)
-            return meta.get("is_literature", False), meta.get("topics", [])
-        except Exception as e:
-            logging.warning(f"Failed to check literature status for {link}: {e}")
-            return False, []
-
     def close(self):
-        self.driver.quit()
+        self.session.close()
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Search MEK for time patterns with hybrid deep extraction.")
-    parser.add_argument("--limit", type=int, default=5, help="Max number of terms to search.")
-    parser.add_argument("--output", default="mek_search_results.jsonl", help="Output file path.")
-    parser.add_argument("--visible", action="store_true", help="Run browser in visible mode.")
-    parser.add_argument("--term", help="Search for a specific term (ignores generator).")
-    parser.add_argument("--deep-extract", dest="deep_extract", action="store_true", default=True,
-                        help="Perform deep extraction on 'Találat helye' chapter sources (default: True).")
-    parser.add_argument("--no-deep-extract", dest="deep_extract", action="store_false",
-                        help="Disable deep extraction and save only search snippets.")
-    parser.add_argument("--download-covers", action="store_true", default=False,
-                        help="Download cover images when available into covers/ directory.")
+    parser = argparse.ArgumentParser(description="Search MEK for time patterns with optimized HTTP query compression.")
+    parser.add_argument("--rules", default=str(REPO_ROOT / "rules.json5"), help="Path to rules.json5")
+    parser.add_argument("--limit", type=int, default=0, help="Max minutes/terms to search (0 = all 1440 minutes).")
+    parser.add_argument("--max-pages", type=int, default=5, help="Max pagination pages per minute query (default: 5).")
+    parser.add_argument("--output", default="mek_time_search_results.jsonl", help="Output file path.")
+    parser.add_argument("--no-deep-extract", action="store_true", help="Disable chapter deep extraction.")
+    parser.add_argument("--download-covers", action="store_true", default=False, help="Download cover images.")
+    parser.add_argument("--term", help="Search for a specific term or query directly.")
+    parser.add_argument("--visible", action="store_true", help="Kept for backward compatibility (headless HTTP is standard).")
     args = parser.parse_args()
 
-    rules_path = Path(__file__).parent.parent.parent / 'rules.json5'
+    rules_path = Path(args.rules)
     rules = load_rules(rules_path)
     if not rules:
         logging.error("Could not load rules. Exiting.")
         return
 
-    # Load already processed terms to resume
-    processed_terms = set()
+    # Load already processed minutes/terms to resume
+    processed_minutes = set()
     output_path = Path(args.output)
     if output_path.exists():
         logging.info(f"Reading existing results from {output_path}...")
         try:
-            with open(output_path, 'r', encoding='utf-8') as f:
+            with open(output_path, "r", encoding="utf-8") as f:
                 for line in f:
                     try:
                         record = json.loads(line)
-                        if "search_term" in record:
-                            processed_terms.add(record["search_term"])
+                        if "norm_time" in record and record["norm_time"]:
+                            processed_minutes.add(record["norm_time"])
+                        elif "search_term" in record:
+                            processed_minutes.add(record["search_term"])
                     except json.JSONDecodeError:
                         pass
-            logging.info(f"Found {len(processed_terms)} already processed terms.")
+            logging.info(f"Found {len(processed_minutes)} already processed minutes/terms.")
         except Exception as e:
             logging.warning(f"Error reading existing file: {e}")
 
     searcher = MekSearcher(
-        headless=not args.visible,
         rules=rules,
-        deep_extract=args.deep_extract,
-        download_covers=args.download_covers
+        deep_extract=not args.no_deep_extract,
+        download_covers=args.download_covers,
+        max_pages=args.max_pages
     )
 
     try:
-        term_to_times = defaultdict(set)
-        
+        generator = TimeTermGenerator(rules)
+        minute_queue = []
+
         if args.term:
-            term = args.term
-            logging.info(f"Single term mode: {term}")
-            if term in processed_terms:
-                logging.warning(f"Term '{term}' was already processed. Searching anyway (single term mode).")
-            search_queue = [term]
+            minute_queue.append((args.term, [args.term], [args.term]))
         else:
-            generator = TimeTermGenerator(rules)
-            logging.info("Generating search terms...")
+            logging.info("Generating canonical time terms and compressed queries for all 1440 minutes...")
             for h in range(24):
                 for m in range(60):
-                    terms = generator.generate_terms(h, m)
                     time_str = f"{h:02}:{m:02}"
-                    for t in terms:
-                        term_to_times[t].add(time_str)
-            
-            sorted_terms = sorted(list(term_to_times.keys()))
-            logging.info(f"Generated {len(sorted_terms)} unique search terms.")
-            
-            # Filter out processed terms
-            remaining_terms = [t for t in sorted_terms if t not in processed_terms]
-            if len(remaining_terms) < len(sorted_terms):
-                logging.info(f"Skipping {len(sorted_terms) - len(remaining_terms)} terms already processed. {len(remaining_terms)} remaining.")
+                    terms = generator.generate_terms(h, m)
+                    query = MekQueryBuilder.build_query(terms)
+                    minute_queue.append((time_str, terms, query))
+
+            # Filter already processed
+            remaining = [item for item in minute_queue if item[0] not in processed_minutes]
+            if len(remaining) < len(minute_queue):
+                logging.info(f"Skipping {len(minute_queue) - len(remaining)} minutes already processed. {len(remaining)} remaining.")
             
             if args.limit > 0:
-                logging.info(f"Test mode: selecting {args.limit} random terms from remaining.")
-                if not remaining_terms:
-                    logging.info("No remaining terms to process.")
-                    return
-                search_queue = random.sample(remaining_terms, min(args.limit, len(remaining_terms)))
+                logging.info(f"Test mode: selecting {args.limit} minutes.")
+                minute_queue = remaining[:args.limit]
             else:
-                search_queue = remaining_terms
+                minute_queue = remaining
 
-        logging.info(f"Starting search for {len(search_queue)} terms...")
-        
-        # Open in APPEND mode
-        with open(args.output, 'a', encoding='utf-8') as f:
-            for i, term in enumerate(search_queue):
-                logging.info(f"[{i+1}/{len(search_queue)}] Searching: {term}")
-                results = searcher.search(term)
-                
-                valid_times = list(term_to_times.get(term, []))
+        logging.info(f"Starting optimized MEK search for {len(minute_queue)} minutes...")
+        start_time = time.time()
+
+        with open(args.output, "a", encoding="utf-8") as f:
+            for i, (time_str, terms, query) in enumerate(minute_queue):
+                logging.info(f"[{i+1}/{len(minute_queue)}] Searching minute {time_str} ({len(terms)} terms compressed)...")
+                results = searcher.search(query)
                 
                 if results:
-                    logging.info(f"  -> Found {len(results)} matches.")
+                    logging.info(f"  -> Found {len(results)} valid matches for {time_str}.")
                     for res in results:
                         if not res.get("valid_times"):
-                            res["valid_times"] = valid_times
+                            res["valid_times"] = [time_str]
                         f.write(json.dumps(res, ensure_ascii=False) + "\n")
                 else:
-                    logging.info("  -> No matches.")
+                    logging.info(f"  -> No matches for {time_str}.")
                     no_match_record = {
-                        "search_term": term,
-                        "valid_times": valid_times,
+                        "search_term": query,
+                        "valid_times": [time_str] if ":" in time_str else [],
                         "count": 0
                     }
                     f.write(json.dumps(no_match_record, ensure_ascii=False) + "\n")
                 f.flush()
 
+                done = i + 1
+                total = len(minute_queue)
+                percent = (done / total) * 100 if total else 100.0
+                elapsed = time.time() - start_time
+                speed = done / elapsed if elapsed > 0 else 0.0
+                remaining_count = total - done
+                eta_s = int(remaining_count / speed) if speed > 0 else 0
+                eta_m, eta_sec = divmod(eta_s, 60)
+                logging.info(f"Progress: {done}/{total} ({percent:.1f}%) | Speed: {speed:.2f} min/s | ETA: {eta_m}m {eta_sec}s")
+
     finally:
         searcher.close()
+
 
 if __name__ == "__main__":
     main()

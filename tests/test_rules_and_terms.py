@@ -172,15 +172,15 @@ class TestRulesAndTerms(unittest.TestCase):
         result = load_rules(REPO_ROOT / 'non_existent_rules.json5')
         self.assertIsNone(result)
 
-    def test_mek_searcher_webdriver_guard(self):
-        import mek_time_search
-        original_webdriver = mek_time_search.webdriver
-        try:
-            mek_time_search.webdriver = None
-            with self.assertRaises(ImportError):
-                mek_time_search.MekSearcher()
-        finally:
-            mek_time_search.webdriver = original_webdriver
+    def test_mek_query_builder(self):
+        from mek_time_search import MekQueryBuilder
+        terms = ["13:45", "háromnegyed 2", "15 perccel 14 óra előtt", "délben"]
+        query = MekQueryBuilder.build_query(terms)
+        self.assertIn('"13:45"', query)
+        self.assertIn('"háromnegyed 2"', query)
+        self.assertIn('"15 perccel 14 óra előtt"', query)
+        self.assertIn('délben', query)
+        self.assertIn(' | ', query)
 
     def test_metadata_fetcher_memory_caching(self):
         from mek_metadata import MekMetadataFetcher
