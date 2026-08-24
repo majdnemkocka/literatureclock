@@ -472,7 +472,8 @@ def main():
     parser.add_argument("--limit", type=int, default=0, help="Max minutes/terms to search (0 = all 1440 minutes).")
     parser.add_argument("--max-pages", type=int, default=5, help="Max pagination pages per minute query (default: 5).")
     parser.add_argument("--output", default="mek_time_search_results.jsonl", help="Output file path.")
-    parser.add_argument("--no-deep-extract", action="store_true", help="Disable chapter deep extraction.")
+    parser.add_argument("--deep-extract", action="store_true", default=True, help="Enable chapter deep extraction (default: enabled).")
+    parser.add_argument("--no-deep-extract", action="store_false", dest="deep_extract", help="Disable chapter deep extraction.")
     parser.add_argument("--download-covers", action="store_true", default=False, help="Download cover images.")
     parser.add_argument("--term", help="Search for a specific term or query directly.")
     parser.add_argument("--visible", action="store_true", help="Kept for backward compatibility (headless HTTP is standard).")
@@ -506,7 +507,7 @@ def main():
 
     searcher = MekSearcher(
         rules=rules,
-        deep_extract=not args.no_deep_extract,
+        deep_extract=args.deep_extract,
         download_covers=args.download_covers,
         max_pages=args.max_pages
     )
