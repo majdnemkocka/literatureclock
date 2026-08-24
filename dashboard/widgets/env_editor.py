@@ -17,42 +17,47 @@ class EnvEditorView(Container):
         self.available_models: List[Tuple[str, str]] = list(DEFAULT_GEMINI_MODELS)
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="env-editor-body"):
+        with VerticalScroll(id="env-editor-scroll-area"):
             yield Label("🛠️ Környezeti Változók és Beállítások (.env)", classes="col-header")
-            yield Static("Itt állíthatod be a PostgreSQL adatbázis kapcsolatot, az AI szolgáltatót és a modellt.", classes="step-detail-desc")
 
-            with Vertical(id="env-fields-list"):
-                with Horizontal(classes="env-field-row"):
-                    yield Label("PostgreSQL Adatbázis (DATABASE_URL):", classes="env-label")
+            with Horizontal(id="env-columns"):
+                # Left column: Database & General
+                with Vertical(id="env-col-left", classes="env-column"):
+                    yield Label("🗄️ PostgreSQL Adatbázis", classes="section-title")
+                    yield Label("Adatbázis URL (DATABASE_URL):", classes="env-label")
                     yield Input(id="env-input-DATABASE_URL", placeholder="postgresql://user:pass@host/db", password=True)
 
-                with Horizontal(classes="env-field-row"):
-                    yield Label("AI Szolgáltató (AI_PROVIDER):", classes="env-label")
-                    yield Select([("Gemini API", "gemini"), ("OpenAI API", "openai"), ("Helyi LM Studio", "lmstudio")], value="gemini", id="env-select-AI_PROVIDER")
-
-                with Horizontal(classes="env-field-row"):
-                    yield Label("Gemini API Kulcs (GEMINI_API_KEY):", classes="env-label")
-                    yield Input(id="env-input-GEMINI_API_KEY", placeholder="AIzaSy...", password=True)
-
-                with Horizontal(classes="env-field-row"):
-                    yield Label("OpenAI API Kulcs (OPENAI_API_KEY):", classes="env-label")
-                    yield Input(id="env-input-OPENAI_API_KEY", placeholder="sk-...", password=True)
-
-                with Horizontal(classes="env-field-row"):
                     yield Label("AI Költségkeret USD (BUDGET_USD):", classes="env-label")
                     yield Input(id="env-input-BUDGET_USD", placeholder="2.0")
 
-                with Horizontal(classes="env-field-row"):
-                    yield Label("Értékelő Modell (generateContent szerint szűrve):", classes="env-label")
-                    yield Select(self.available_models, value="gemini-2.5-flash", id="env-select-MODEL_NAME")
-                    yield Button("🔄 API Modellek", id="btn-fetch-models", variant="default")
+                # Right column: AI Provider & Model
+                with Vertical(id="env-col-right", classes="env-column"):
+                    yield Label("🤖 AI Szolgáltató & Modellválasztó", classes="section-title")
 
-            yield Static("", id="env-status-msg", classes="env-status-msg")
+                    yield Label("AI Szolgáltató (AI_PROVIDER):", classes="env-label")
+                    yield Select(
+                        [("Gemini API", "gemini"), ("OpenAI API", "openai"), ("Helyi LM Studio", "lmstudio")],
+                        value="gemini",
+                        id="env-select-AI_PROVIDER",
+                    )
 
-            with Horizontal(id="env-actions-bar"):
-                yield Button("💾 Mentés .env fájlba", id="btn-save-env", variant="success")
-                yield Button("🔌 Kapcsolatok Tesztelése", id="btn-test-env", variant="primary")
-                yield Button("🔄 Visszaállítás", id="btn-reload-env", variant="default")
+                    yield Label("Értékelő Modell (generateContent):", classes="env-label")
+                    with Horizontal(id="model-select-row"):
+                        yield Select(self.available_models, value="gemini-3.7-flash", id="env-select-MODEL_NAME")
+                        yield Button("🔄 API Frissítés", id="btn-fetch-models", variant="default")
+
+                    yield Label("Gemini API Kulcs (GEMINI_API_KEY):", classes="env-label")
+                    yield Input(id="env-input-GEMINI_API_KEY", placeholder="AIzaSy...", password=True)
+
+                    yield Label("OpenAI API Kulcs (OPENAI_API_KEY):", classes="env-label")
+                    yield Input(id="env-input-OPENAI_API_KEY", placeholder="sk-...", password=True)
+
+        yield Static("", id="env-status-msg", classes="env-status-msg")
+
+        with Horizontal(id="env-actions-bar"):
+            yield Button("💾 Mentés .env fájlba", id="btn-save-env", variant="success")
+            yield Button("🔌 Kapcsolat Tesztelése", id="btn-test-env", variant="primary")
+            yield Button("🔄 Visszaállítás", id="btn-reload-env", variant="default")
 
     def on_mount(self) -> None:
         self.reload_config()
@@ -68,7 +73,7 @@ class EnvEditorView(Container):
         if provider in ["gemini", "openai", "lmstudio"]:
             self.query_one("#env-select-AI_PROVIDER", Select).value = provider
 
-        target_model = config.get("GEMINI_MODEL") or config.get("MODEL_NAME") or "gemini-2.5-flash"
+        target_model = config.get("GEMINI_MODEL") or config.get("MODEL_NAME") or "gemini-3.7-flash"
         self._refresh_model_options(provider, config.get("GEMINI_API_KEY", ""), target_model)
 
         status_msg = self.query_one("#env-status-msg", Static)
@@ -78,13 +83,12 @@ class EnvEditorView(Container):
     def _refresh_model_options(self, provider: str, api_key: str, selected_value: Optional[str] = None) -> None:
         models = get_available_models_for_provider(provider, api_key=api_key)
         self.available_models = models
-        
+
         sel = self.query_one("#env-select-MODEL_NAME", Select)
         options = [(label, val) for label, val in models]
 
-        # If current selected value not in options, add it as custom entry
         model_ids = [val for _, val in models]
-        active_val = selected_value or (sel.value if sel.value != Select.BLANK else "gemini-2.5-flash")
+        active_val = selected_value or (sel.value if sel.value != Select.BLANK else "gemini-3.7-flash")
         if active_val and active_val not in model_ids:
             options.insert(0, (f"Egyedi: {active_val}", active_val))
             model_ids.insert(0, active_val)
@@ -103,8 +107,8 @@ class EnvEditorView(Container):
 
     def save_config(self) -> None:
         model_sel = self.query_one("#env-select-MODEL_NAME", Select)
-        model_val = str(model_sel.value) if model_sel.value != Select.BLANK else "gemini-2.5-flash"
-        
+        model_val = str(model_sel.value) if model_sel.value != Select.BLANK else "gemini-3.7-flash"
+
         updates = {
             "DATABASE_URL": self.query_one("#env-input-DATABASE_URL", Input).value.strip(),
             "AI_PROVIDER": str(self.query_one("#env-select-AI_PROVIDER", Select).value),
@@ -124,7 +128,7 @@ class EnvEditorView(Container):
         provider = str(self.query_one("#env-select-AI_PROVIDER", Select).value)
         api_key = self.query_one("#env-input-GEMINI_API_KEY", Input).value.strip()
         status_msg = self.query_one("#env-status-msg", Static)
-        status_msg.update("⏳ Modellek lekérése az API-tól és szűrése (supportedGenerationMethods)...")
+        status_msg.update("⏳ Modellek lekérése az API-tól és szűrése...")
 
         cur_val = self.query_one("#env-select-MODEL_NAME", Select).value
         target_val = str(cur_val) if cur_val != Select.BLANK else None
@@ -147,6 +151,7 @@ class EnvEditorView(Container):
 
         try:
             import psycopg2
+
             conn = psycopg2.connect(db_url, connect_timeout=3)
             conn.close()
             status_msg.update("✅ PostgreSQL adatbázis kapcsolat sikeres!")

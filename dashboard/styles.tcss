@@ -306,41 +306,69 @@ TabPane {
 #env-editor-container {
     height: 1fr;
     width: 100%;
-    padding: 1;
+    layout: vertical;
+    padding: 0 1;
 }
 
-#env-editor-body {
-    height: 100%;
+#env-editor-scroll-area {
+    height: 1fr;
     width: 100%;
 }
 
-.env-field-row {
-    height: 3;
-    align: left middle;
+#env-columns {
+    height: auto;
+    width: 100%;
+}
+
+.env-column {
+    width: 50%;
+    height: auto;
+    padding: 0 1;
+}
+
+#env-col-left {
+    border-right: solid #334155;
+}
+
+.section-title {
+    text-style: bold;
+    color: #38bdf8;
+    margin-top: 1;
     margin-bottom: 1;
+    border-bottom: solid #334155;
 }
 
 .env-label {
-    width: 40;
-    color: #e2e8f0;
+    color: #cbd5e1;
+    margin-top: 1;
+    margin-bottom: 0;
 }
 
-.env-field-row Input {
+.env-column Input {
+    width: 100%;
+}
+
+.env-column Select {
+    width: 100%;
+}
+
+#model-select-row {
+    height: 3;
+    align: left middle;
+}
+
+#model-select-row Select {
     width: 1fr;
 }
 
-.env-field-row Select {
-    width: 1fr;
-}
-
-.env-field-row Button {
+#model-select-row Button {
     margin-left: 1;
     width: auto;
 }
 
 .env-status-msg {
-    height: 2;
-    margin-top: 1;
+    dock: bottom;
+    height: 1;
     color: #94a3b8;
 }
 
@@ -353,6 +381,7 @@ TabPane {
 }
 
 #env-actions-bar {
+    dock: bottom;
     height: 3;
     margin-top: 1;
 }
