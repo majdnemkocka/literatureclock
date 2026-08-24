@@ -134,8 +134,8 @@ class LiteratureClockDashboardApp(App):
             command=cmd,
             cwd=cwd,
             env=env,
-            on_line=lambda line, is_err: self.call_from_thread(console.write_line, line, is_err),
-            on_status_change=lambda status: self.call_from_thread(header.update_status, status),
+            on_line=console.write_line,
+            on_status_change=header.update_status,
         )
 
         self.run_worker(self._execute_runner(self.active_runner, title, on_finish), exclusive=True)

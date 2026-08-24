@@ -20,7 +20,7 @@ class TestDashboardApp(unittest.TestCase):
             app = LiteratureClockDashboardApp()
             async with app.run_test() as pilot:
                 self.assertEqual(app.title, "Irodalmi Óra & Naptár – Irányítópult")
-                
+
                 # Check tabs exist
                 self.assertIsNotNone(app.query_one(WizardView))
                 self.assertIsNotNone(app.query_one(ScriptCenterView))
@@ -30,7 +30,7 @@ class TestDashboardApp(unittest.TestCase):
                 # Switch to Scripts tab via keybinding F3
                 await pilot.press("f3")
                 self.assertEqual(app.query_one("#main-tabs").active, "tab-scripts")
-                
+
                 # Switch to Stats tab via F4
                 await pilot.press("f4")
                 self.assertEqual(app.query_one("#main-tabs").active, "tab-stats")
@@ -42,5 +42,27 @@ class TestDashboardApp(unittest.TestCase):
                 # Switch back to Wizard tab via F2
                 await pilot.press("f2")
                 self.assertEqual(app.query_one("#main-tabs").active, "tab-wizard")
+
+        asyncio.run(_run())
+
+    def test_app_run_process_execution(self):
+        async def _run():
+            app = LiteratureClockDashboardApp()
+            async with app.run_test() as pilot:
+                finished_codes = []
+                app._start_task(
+                    cmd=[sys.executable, "-c", "print('hello from test runner')"],
+                    cwd=REPO_ROOT,
+                    title="Test Process",
+                    on_finish=lambda code: finished_codes.append(code),
+                )
+                await pilot.pause(0.5)
+                # Wait for worker to finish
+                for _ in range(20):
+                    if finished_codes:
+                        break
+                    await pilot.pause(0.1)
+
+                self.assertEqual(finished_codes, [0])
 
         asyncio.run(_run())
