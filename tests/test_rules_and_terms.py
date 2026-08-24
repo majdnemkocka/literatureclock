@@ -157,6 +157,15 @@ class TestRulesAndTerms(unittest.TestCase):
         empty_summary = load_stats(REPO_ROOT / 'non_existent_summary.json')
         self.assertEqual(empty_summary, {})
 
+    def test_submatch_suppression_fel_nyolckor(self):
+        from extractor import extract
+        text = "reggel fél nyolckor odaálltam az élelmiszerüzem előtt várakozó sorba"
+        records = list(extract(text, self.rules))
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["norm_time"], "07:30")
+        self.assertEqual(records[0]["match"], "fél nyolckor")
+        self.assertIn('<span class="marked">fél nyolckor</span>', records[0]["context"])
+
     def test_load_rules_fallback(self):
         result = load_rules(REPO_ROOT / 'non_existent_rules.json5')
         self.assertIsNone(result)

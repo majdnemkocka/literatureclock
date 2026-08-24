@@ -190,6 +190,7 @@ def emit_record(rule_id: str, match_txt: str, s: int, e: int, text: str,
 # ---------- core extraction ----------
 def extract(text: str, rules: dict) -> Iterable[dict]:
     dayparts = find_dayparts(text, rules)
+    raw_matches = []
 
     for r in rules["rules"]:
         kind = r["semantics"]; rx = r["_re"]
@@ -207,7 +208,7 @@ def extract(text: str, rules: dict) -> Iterable[dict]:
 
             if kind == "clock_hh_mm":
                 h, mm = int(m.group(1)), int(m.group(2))
-                yield emit_record(r["id"], match_txt, s, e, text, [h], mm)
+                raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, [h], mm)))
 
             elif kind == "clock_words_maybe_digits":
                 hour_word = m.group(1)
@@ -225,11 +226,11 @@ def extract(text: str, rules: dict) -> Iterable[dict]:
                         continue
                 else:
                     continue
-                yield emit_record(r["id"], match_txt, s, e, text, h_cands, mm)
+                raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, h_cands, mm)))
 
             elif kind == "oclock_h":
                 h = int(m.group(1))
-                yield emit_record(r["id"], match_txt, s, e, text, [h], 0)
+                raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, [h], 0)))
 
             elif kind in ("half_next_hour","quarter_next_hour","threequarter_next_hour"):
                 target = m.group(1)
@@ -246,12 +247,10 @@ def extract(text: str, rules: dict) -> Iterable[dict]:
                 mm = 30 if kind == "half_next_hour" else 15 if kind == "quarter_next_hour" else 45
                 # from_h = (to_h - 1) % 24  → apply per candidate
                 hours = [ (h-1) % 24 for h in to_cands ]
-                yield emit_record(r["id"], match_txt, s, e, text, hours, mm)
+                raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, hours, mm)))
 
             elif kind == "after_minutes":
-                # groups: (Yd | Yw) ... Xh OR Xh ... (Yd | Yw)
                 g = m.groups()
-                # pick whichever is not None
                 y_digits = next((int(v) for v in (g[0], g[4]) if v and v.isdigit()), None)
                 y_word   = next((v for v in (g[1], g[5]) if v), None)
                 x_hour   = next((int(v) for v in (g[2], g[3]) if v and v.isdigit()), None)
@@ -260,7 +259,7 @@ def extract(text: str, rules: dict) -> Iterable[dict]:
                 y = y_digits if y_digits is not None else (parse_hu_number_word(y_word) if y_word else None)
                 if y is None or y > 59:
                     continue
-                yield emit_record(r["id"], match_txt, s, e, text, [x_hour], y)
+                raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, [x_hour], y)))
 
             elif kind == "before_minutes":
                 g = m.groups()
@@ -275,7 +274,7 @@ def extract(text: str, rules: dict) -> Iterable[dict]:
                 # (X-1):(60-Y)
                 from_h = (x_hour - 1) % 24
                 mm = (60 - y) % 60
-                yield emit_record(r["id"], match_txt, s, e, text, [from_h], mm)
+                raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, [from_h], mm)))
 
             elif kind == "oclock_word_needs_daypart":
                 word = m.group(1)
@@ -283,7 +282,23 @@ def extract(text: str, rules: dict) -> Iterable[dict]:
                 if h_raw is None:
                     continue
                 h_cands = disambiguate_hour_candidates(h_raw, ctx)
-                yield emit_record(r["id"], match_txt, s, e, text, h_cands, 0)
+                raw_matches.append((s, e, emit_record(r["id"], match_txt, s, e, text, h_cands, 0)))
+
+    # Suppress contained submatches (e.g. "nyolckor" inside "fél nyolckor" or "negyed nyolckor")
+    # Sort by start ascending, then length descending
+    raw_matches.sort(key=lambda item: (item[0], -(item[1] - item[0])))
+    filtered = []
+    for s, e, rec in raw_matches:
+        is_submatch = False
+        for fs, fe, _ in filtered:
+            if fs <= s and e <= fe:
+                is_submatch = True
+                break
+        if not is_submatch:
+            filtered.append((s, e, rec))
+
+    for _, _, rec in filtered:
+        yield rec
 
 def iter_files(root: Path) -> Iterable[Path]:
     if root.is_file():

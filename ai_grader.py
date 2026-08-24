@@ -97,11 +97,14 @@ Input Data (JSON):
 {data}
 
 Output Format (JSON):
-Return a list of objects. Each object must have, in this exact order:
+Return a list of objects. Each object must have:
 - "id": (integer) The entry ID from the input.
-- "reason": (string) Short explanation (e.g., "Date format", "TOC", "Valid quote").
+- "reason": (string) Short explanation (e.g., "Valid quote", "Corrected time from 08:00 to 07:30 for fél nyolckor", "Date format").
 - "rate": (integer) 0-5 rating of quality (i.e., 0 for DENY, 5 for perfect KEEP)
 - "status": "DENY" or "KEEP"
+- "corrected_time": (string or null)
+  * If the scraper's matched_time is inaccurate (e.g. matched '08:00' because of partial token 'nyolckor' in 'fél nyolckor' which is actually '07:30' or '19:30', or 'este 9' is 21:00), provide the corrected 24h time in 'HH:MM' format (e.g. '07:30', '19:30', '21:00').
+  * If the matched_time is already correct or status is DENY, return null.
 """
 
 def get_unchecked_entries(cur, limit):
@@ -134,15 +137,34 @@ def get_unchecked_entries(cur, limit):
 def mark_as_checked(cur, results):
     if not results: return
     
-    # Update entries with rating and reason
+    # Update entries with rating, reason, and AI time override if provided
     for r in results:
-        cur.execute("""
-            UPDATE entries 
-            SET ai_checked = TRUE, 
-                ai_rating = %s, 
-                ai_reason = %s 
-            WHERE id = %s
-        """, (r.get('rate'), r.get('reason'), r['id']))
+        corrected_time = r.get('corrected_time')
+        norm_ct = None
+        if corrected_time and isinstance(corrected_time, str):
+            ct_clean = corrected_time.strip()
+            if re.match(r'^\d{1,2}:\d{2}$', ct_clean):
+                h, m = map(int, ct_clean.split(':'))
+                if 0 <= h <= 23 and 0 <= m <= 59:
+                    norm_ct = f"{h:02d}:{m:02d}"
+
+        if norm_ct:
+            cur.execute("""
+                UPDATE entries 
+                SET ai_checked = TRUE, 
+                    ai_rating = %s, 
+                    ai_reason = %s,
+                    valid_times = ARRAY[%s]::TEXT[]
+                WHERE id = %s
+            """, (r.get('rate'), r.get('reason'), norm_ct, r['id']))
+        else:
+            cur.execute("""
+                UPDATE entries 
+                SET ai_checked = TRUE, 
+                    ai_rating = %s, 
+                    ai_reason = %s 
+                WHERE id = %s
+            """, (r.get('rate'), r.get('reason'), r['id']))
 
 def insert_deny_votes(cur, denials):
     if not denials: return

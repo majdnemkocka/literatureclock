@@ -40,14 +40,14 @@
       "id": "oclock_strict_24h",
       "description": "X óra / X-kor / X órakor (digits, 0–23 only).",
       "type": "regex",
-      "pattern": "\\b([01]?\\d|2[0-3])\\s*(?:óra|órakor|-?kor)\\b",
+      "pattern": "(?<!\\bfél\\s)(?<!\\bfel\\s)(?<!\\bnegyed\\s)(?<!\\bháromnegyed\\s)(?<!\\bharomnegyed\\s)\\b([01]?\\d|2[0-3])\\s*(?:óra|órakor|-?kor)\\b",
       "semantics": "oclock_h"
     },
     {
       "id": "relative_fel",
       "description": "fél N → (N-1):30",
       "type": "regex",
-      "pattern": "\\bfél\\s*(1[0-2]|0?[1-9]|tizenegy|tizenkettő|egy|kettő|két|három|négy|öt|hat|hét|nyolc|kilenc|tíz)(?:-?kor)?\\b",
+      "pattern": "\\bf[ée]l\\s*(1[0-2]|0?[1-9]|tizenegy|tizenkettő|egy|kettő|két|három|négy|öt|hat|hét|nyolc|kilenc|tíz)(?:-?kor)?\\b",
       "semantics": "half_next_hour"
     },
     {
@@ -61,7 +61,7 @@
       "id": "relative_haromnegyed",
       "description": "háromnegyed N → (N-1):45",
       "type": "regex",
-      "pattern": "\\bháromnegyed\\s*(1[0-2]|0?[1-9]|tizenegy|tizenkettő|egy|kettő|két|három|négy|öt|hat|hét|nyolc|kilenc|tíz)(?:-?kor)?\\b",
+      "pattern": "\\bh[aá]romnegyed\\s*(1[0-2]|0?[1-9]|tizenegy|tizenkettő|egy|kettő|két|három|négy|öt|hat|hét|nyolc|kilenc|tíz)(?:-?kor)?\\b",
       "semantics": "threequarter_next_hour"
     },
     {
@@ -82,7 +82,7 @@
       "id": "oclock_words_with_daypart",
       "description": "word + óra/órakor with daypart bias (we keep ambiguous if no daypart).",
       "type": "regex",
-      "pattern": "\\b(egy|kettő|két|három|négy|öt|hat|hét|nyolc|kilenc|tíz|tizenegy|tizenkettő)\\s*(?:óra|órakor|-?kor)\\b",
+      "pattern": "(?<!\\bfél\\s)(?<!\\bfel\\s)(?<!\\bnegyed\\s)(?<!\\bháromnegyed\\s)(?<!\\bharomnegyed\\s)\\b(egy|kettő|két|három|négy|öt|hat|hét|nyolc|kilenc|tíz|tizenegy|tizenkettő)\\s*(?:óra|órakor|-?kor)\\b",
       "semantics": "oclock_word_needs_daypart"
     },
     {
