@@ -21,7 +21,7 @@ if str(REPO_ROOT / 'scrapers') not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / 'scrapers'))
 
 from mek_metadata import MekMetadataFetcher
-from extractor import extract_from_html
+from extractor import extract_from_html, extract, raw_html_to_text, load_rules
 
 try:
     from bs4 import BeautifulSoup
@@ -398,7 +398,7 @@ class MekSearcher:
                                 deep_success = True
                                 for rec in extracted_records:
                                     norm_t = rec.get("norm_time")
-                                    valid_time_list = [norm_t] if norm_t else []
+                                    valid_time_list = rec.get("valid_times", [norm_t] if norm_t else [])
                                     deep_item = {
                                         "search_term": term,
                                         "title": meta.get("title") or res["title"],
@@ -433,6 +433,19 @@ class MekSearcher:
 
                 # Fallback to snippet if deep extract didn't yield records
                 if not deep_success:
+                    fb_text = raw_html_to_text(res.get("snippet", ""))
+                    fb_records = list(extract(fb_text, self.rules)) if self.rules else []
+                    if fb_records:
+                        res["norm_time"] = fb_records[0].get("norm_time")
+                        res["valid_times"] = fb_records[0].get("valid_times", [res["norm_time"]] if res["norm_time"] else [])
+                        res["matched_text"] = fb_records[0].get("match")
+                    else:
+                        term_records = list(extract(term, self.rules)) if self.rules else []
+                        if term_records:
+                            res["norm_time"] = term_records[0].get("norm_time")
+                            res["valid_times"] = term_records[0].get("valid_times", [res["norm_time"]] if res["norm_time"] else [])
+                        else:
+                            res["valid_times"] = []
                     res["source_type"] = "snippet_fallback"
                     res["is_fallback"] = True
                     res["is_literature"] = is_lit

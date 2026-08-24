@@ -42,6 +42,8 @@ def seed():
             source_url TEXT,
             source_type TEXT,
             is_fallback BOOLEAN DEFAULT FALSE,
+            ai_rating INTEGER,
+            ai_reason TEXT,
             ai_checked BOOLEAN DEFAULT FALSE
         );
 

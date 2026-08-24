@@ -113,26 +113,78 @@ def disambiguate_hour_candidates(h: int, ctx_tokens: List[str]) -> List[int]:
     # ambiguous on purpose: both candidates
     return [0 if h==12 else h, 12 if h==12 else (h+12)]
 
+def get_expanded_context(text: str, s: int, e: int, radius: int = 220) -> str:
+    """
+    Extracts a readable literary context around [s, e] and highlights the match with <span class="marked">.
+    Attempts to align with sentence and word boundaries.
+    """
+    start_pos = max(0, s - radius)
+    end_pos = min(len(text), e + radius)
+
+    # Align start boundary to sentence end or word start
+    if start_pos > 0:
+        # Check if there is a sentence boundary close to start_pos
+        sent_break = -1
+        for punct in ('. ', '! ', '? ', '.\n', '!\n', '?\n'):
+            idx = text.rfind(punct, max(0, start_pos - 40), s)
+            if idx != -1 and idx > sent_break:
+                sent_break = idx + len(punct)
+        if sent_break != -1 and s - sent_break >= 30:
+            start_pos = sent_break
+        else:
+            prev_space = text.find(' ', start_pos, s)
+            if prev_space != -1 and prev_space - start_pos < 30:
+                start_pos = prev_space + 1
+
+    # Align end boundary to sentence end or word end
+    if end_pos < len(text):
+        sent_break = -1
+        for punct in ('. ', '! ', '? ', '.\n', '!\n', '?\n'):
+            idx = text.find(punct, e, min(len(text), end_pos + 40))
+            if idx != -1 and (sent_break == -1 or idx < sent_break):
+                sent_break = idx + 1
+        if sent_break != -1 and sent_break - e >= 30:
+            end_pos = sent_break
+        else:
+            next_space = text.rfind(' ', e, end_pos)
+            if next_space != -1 and end_pos - next_space < 30:
+                end_pos = next_space
+
+    left = text[start_pos:s]
+    mid = text[s:e]
+    right = text[e:end_pos]
+    return f"{left}<span class=\"marked\">{mid}</span>{right}".strip()
+
+
 def emit_record(rule_id: str, match_txt: str, s: int, e: int, text: str,
                 hour_candidates: List[int], minute_value: int) -> dict:
+    context = get_expanded_context(text, s, e)
+    
     if len(hour_candidates) == 1:
         minute = hhmm_to_minute(hour_candidates[0], minute_value)
+        norm_time = f"{minute//60:02d}:{minute%60:02d}"
         return {
             "rule_id": rule_id,
             "match": match_txt,
-            "norm_time": f"{minute//60:02d}:{minute%60:02d}",
+            "norm_time": norm_time,
             "minute": minute,
-            "context": text[max(0,s-60):min(len(text),e+60)].strip()
+            "minute_candidates": [minute],
+            "valid_times": [norm_time],
+            "context": context
         }
     else:
         mins = [hhmm_to_minute(h, minute_value) for h in hour_candidates]
+        valid_times = [f"{m//60:02d}:{m%60:02d}" for m in mins]
+        norm_time = valid_times[0] if valid_times else None
         return {
             "rule_id": rule_id,
             "match": match_txt,
-            "minute": None,
+            "norm_time": norm_time,
+            "minute": mins[0] if mins else None,
             "minute_candidates": sorted(mins),
+            "valid_times": valid_times,
             "ambiguous_12h": True,
-            "context": text[max(0,s-60):min(len(text),e+60)].strip()
+            "context": context
         }
 
 # ---------- core extraction ----------
