@@ -333,6 +333,11 @@ TabPane {
     width: 1fr;
 }
 
+.env-field-row Button {
+    margin-left: 1;
+    width: auto;
+}
+
 .env-status-msg {
     height: 2;
     margin-top: 1;
